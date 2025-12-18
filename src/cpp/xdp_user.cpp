@@ -1,5 +1,6 @@
 #include <iostream>
 #include <cstring>
+#include "recv.cpp"
 #include <cstdlib>
 #include <unistd.h>
 #include <poll.h>
@@ -59,7 +60,7 @@ int main(int argc, char** argv) {
         die("fq reserve"); // die
     }
     
-    for (uint32_t i = 0; i < NUM_FRAMES; i++) { 
+    for (uint32_t i{}; i < NUM_FRAMES; i++) { 
         // give kernel the address/offset of frame i
         *xsk_ring_prod__fill_addr(&fq, idx + i) = i * FRAME_SIZE; 
     }
@@ -79,7 +80,7 @@ int main(int argc, char** argv) {
         die("find_program"); // die if not found   
     }
 
-    int prog_fd = bpf_program__fd(prog);                                        // get file descriptor for the program
+    int prog_fd = bpf_program__fd(prog);  // get file descriptor for the program
     if (prog_fd < 0) { // die if fd is bad
         die("prog_fd");  
     }  
@@ -149,16 +150,17 @@ int main(int argc, char** argv) {
             continue; // nothing ready 
         } 
 
-        for (uint32_t i = 0; i < rcvd; i++) {    // for each received packet
+        DedupeWindow dd;
+        OrderBook book;
+        for (uint32_t i{}; i < rcvd; i++) {
             xdp_desc* d = xsk_ring_cons__rx_desc(&rx, rx_idx + i);
             uint8_t* frame = (uint8_t*)umem_area + d->addr;
 
-            // parse headers
-
             Packet p;
-            std::memcpy(&p, payload_ptr, sizeof(Packet));
-            // TODO ntohl 
-            // TODO put into matcher shi
+            if (!parse_packet(frame, d->len, p, 9000)) {
+                continue;
+            }
+            handle_packet(p, dd, book);
         }
 
         // return the same buffers back into the fill ring for reuse
@@ -168,7 +170,7 @@ int main(int argc, char** argv) {
         if (xsk_ring_prod__reserve(&fq, rcvd, &fq_idx) != (int)rcvd) {    
             die("fq reserve (recycle)");   // die if ring is full
         }
-        for (uint32_t i = 0; i < rcvd; i++) { // for each packet we consumed
+        for (uint32_t i{}; i < rcvd; i++) { // for each packet we consumed
             xdp_desc* d = xsk_ring_cons__rx_desc(&rx, rx_idx + i);  // get its descriptor
             *xsk_ring_prod__fill_addr(&fq, fq_idx + i) = d->addr;  // return its buffer addr to kernel
         }
