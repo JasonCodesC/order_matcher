@@ -47,4 +47,4 @@ int xdp_redirect_udp_9000(struct xdp_md *ctx) {
     return bpf_redirect_map(&xsks_map, qid, 0); // send packet to AF_XDP socket for qid
 }
 
-char _license[] SEC("license") = "GPL";                          // required license line
+char _license[] SEC("license") = "GPL";
