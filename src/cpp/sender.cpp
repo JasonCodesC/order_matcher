@@ -14,7 +14,7 @@
 void send() {
     std::mt19937 engine(static_cast<unsigned int>(std::time(nullptr))); //Send info at random times
     int min = 2;
-    int max = 100;
+    int max = 10;
     std::uniform_int_distribution<int> dist(min, max);
 
     int fd = socket(AF_INET, SOCK_DGRAM, 0); //UDP socket
