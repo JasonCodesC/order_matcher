@@ -2,10 +2,11 @@
 #include <cstring>
 #include <map>
 #include "recv_helper.h"
-#include "book_types.h"
+#include "match.h"
 #include "../cpp_helpers/protocols.hpp"
 #include <cstdlib>
 #include <unistd.h>
+#include <thread>
 #include <poll.h>
 #include <sys/mman.h>
 #include <bpf/libbpf.h>
@@ -17,6 +18,7 @@ static constexpr uint32_t NUM_FRAMES = 4096;    // how many packet buffers in UM
 static constexpr uint32_t BATCH = 64;           // process packets in chunks
 static constexpr int UDP_PORT = 9000;                                
 
+__attribute__((noinline))
 static void die(const char* msg) { 
   std::perror(msg);
   std::exit(1);
@@ -31,10 +33,7 @@ static void detach_xdp() {
 }
 
 int main(int argc, char** argv) {
-    if (argc != 2) { 
-        std::cerr << "usage: " << argv[0] << " <ifname>\n";
-        return 1;
-    }
+    
     const char* ifname = argv[1];
     const uint32_t queue_id = 0; // use queue 0
 
@@ -148,7 +147,8 @@ int main(int argc, char** argv) {
     
 
     DedupeWindow dd;
-    Books book;
+    OrderMsgRing ring;
+    std::thread matcher([&ring]() { match_loop(ring); });
     // loop: poll Recv ring, handle packets, then recycle buffers
     while (true) {
         pollfd pfd{};
@@ -176,7 +176,10 @@ int main(int argc, char** argv) {
             if (!parse_packet(frame, d->len, p, 9000)) {
                 continue;
             }
-            handle_packet(p, dd, book);
+            if (dd.is_duplicate(p.seq_num)) {continue;}
+
+            OrderMsg msg{p.seq_num, p.order_id, p.price_tick, p.qty, p.msg_type, p.side};
+            while (!ring.try_push(msg)) {}
         }
 
         // return the same buffers back into the fill ring for reuse

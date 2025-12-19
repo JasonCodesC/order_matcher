@@ -21,7 +21,7 @@ struct info {
 
 //   std::map<uint32_t, std::vector<Order>, std::greater<uint32_t>> for bids
 //   std::map<uint32_t, std::vector<Order>, std::less<uint32_t>> for asks
-//   std::vector<uint32_t, std::vector<Order>> But sorted
+//   std::vector<uint32_t, std::vector<Order>> But sorted maybe might be good
 
 template <Order_Type T, typename Container>
 class OrderBook {

@@ -16,3 +16,12 @@ struct Packet {
 #pragma pack(pop)
 
 static_assert(sizeof(Packet) == 18);
+
+struct OrderMsg {
+  uint32_t seq_num;
+  uint32_t order_id;
+  uint32_t price_tick;
+  uint32_t qty;
+  MsgType msg_type;
+  Order_Type side;
+};
