@@ -8,6 +8,8 @@
 #include <cstdlib>
 #include <unistd.h>
 #include <thread>
+#include <atomic>
+#include <csignal>
 #include <poll.h>
 #include <sys/mman.h>
 #include <bpf/libbpf.h>
@@ -18,6 +20,9 @@ static constexpr uint32_t FRAME_SIZE = 2048;    // size of one packet buffer
 static constexpr uint32_t NUM_FRAMES = 4096;    // how many packet buffers in UMEM
 static constexpr uint32_t BATCH = 64;           // process packets in chunks
 static constexpr int UDP_PORT = 9000;                                
+static constexpr const char* IFACE_NAME = "eth0";
+static constexpr const char* TRADE_DST_IP = "10.0.0.1";
+static constexpr uint16_t TRADE_DST_PORT = 9001;
 
 __attribute__((noinline))
 static void die(const char* msg) { 
@@ -26,6 +31,7 @@ static void die(const char* msg) {
 }
 
 static int g_ifindex = -1;
+static std::atomic<bool> g_running(true);
 
 static void detach_xdp() {
     if (g_ifindex >= 0) {
@@ -33,18 +39,22 @@ static void detach_xdp() {
     }
 }
 
-int main(int argc, char** argv) {
-    if (argc != 4) {
-        std::cerr << "usage: " << argv[0] << " <ifname> <dst_ip> <dst_port>\n";
-        return 1;
-    }
+static void handle_sig(int) {
+    g_running.store(false, std::memory_order_release);
+}
 
-    const char* ifname = argv[1];
-    const char* dst_ip = argv[2];
-    const uint16_t dst_port = static_cast<uint16_t>(std::strtoul(argv[3], nullptr, 10));
+int main(int argc, char** argv) {
+
+    (void)argc; (void)argv;
+
+    const char* ifname = IFACE_NAME;
+    const char* dst_ip = TRADE_DST_IP;
+    const uint16_t dst_port = TRADE_DST_PORT;
     const uint32_t queue_id = 0; // use queue 0
 
     libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
+    std::signal(SIGINT, handle_sig);
+    std::signal(SIGTERM, handle_sig);
 
     // Allocate UMEM 
     void* umem_area = nullptr;
@@ -156,12 +166,10 @@ int main(int argc, char** argv) {
     DedupeWindow dd;
     OrderMsgRing ring;
     TradeMsgRing trade_ring;
-    std::thread matcher([&ring, &trade_ring]() { match_loop(ring, trade_ring); });
-    std::thread trade_sender = start_trade_sender(trade_ring, dst_ip, dst_port);
-    matcher.detach();
-    trade_sender.detach();
+    std::thread matcher([&ring, &trade_ring]() { match_loop(ring, trade_ring, g_running); });
+    std::thread trade_sender = start_trade_sender(trade_ring, dst_ip, dst_port, g_running);
     // loop: poll Recv ring, handle packets, then recycle buffers
-    while (true) {
+    while (g_running.load(std::memory_order_acquire)) {
         pollfd pfd{};
         pfd.fd = xsk_fd; // poll on xsk fd
         pfd.events = POLLIN; // wake up when packets arrive
@@ -214,6 +222,8 @@ int main(int argc, char** argv) {
         xsk_ring_prod__submit(&fq, rcvd); // submit recycled buffers
         xsk_ring_cons__release(&rx, rcvd); // tell kernel we’re done with those RX entries
     }
-    
+    matcher.join();
+    trade_sender.join();
+
     return 0;
 }

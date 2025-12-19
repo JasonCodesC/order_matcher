@@ -1,13 +1,14 @@
 #include "match.h"
 #include "book_types.h"
 
-void match_loop(OrderMsgRing& ring, TradeMsgRing& trades) {
+void match_loop(OrderMsgRing& ring, TradeMsgRing& trades, std::atomic<bool>& running) {
     Books book;
 
-    while (true) {
+    while (running.load(std::memory_order_acquire)) {
         OrderMsg* slot = nullptr;
         if (!ring.try_acquire_consumer_slot(slot)) { continue; }
         OrderMsg& msg = *slot;
+        const bool taker_is_buy = (msg.side == Order_Type::Buy);
 
         switch (msg.msg_type) {
             case MsgType::NewLimit:
@@ -48,8 +49,7 @@ void match_loop(OrderMsgRing& ring, TradeMsgRing& trades) {
             Order* ask_o = book.asks.best_order(ask_px);
 
             const uint32_t trade_qty = (bid_o->qty < ask_o->qty) ? bid_o->qty : ask_o->qty;
-            // use resting orders price
-            const uint32_t trade_px = (msg.side == Order_Type::Buy) ? ask_px : bid_px;
+            const uint32_t trade_px = taker_is_buy ? ask_px : bid_px;
 
             // emit trade
             TradeMsg* tslot = nullptr;

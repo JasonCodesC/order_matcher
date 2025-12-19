@@ -8,6 +8,7 @@
 #include <thread>
 #include <cstring>
 #include <iostream>
+#include <atomic>
 
 struct TradeWire {
     uint32_t bid_order_id;
@@ -16,7 +17,7 @@ struct TradeWire {
     uint32_t qty;
 };
 
-inline std::thread start_trade_sender(TradeMsgRing& trades, const char* dst_ip, uint16_t dst_port) {
+inline std::thread start_trade_sender(TradeMsgRing& trades, const char* dst_ip, uint16_t dst_port, std::atomic<bool>& running) {
     int fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (fd < 0) {
         std::perror("trade sender socket");
@@ -31,8 +32,8 @@ inline std::thread start_trade_sender(TradeMsgRing& trades, const char* dst_ip, 
         std::exit(1);
     }
 
-    return std::thread([fd, addr, &trades]() mutable {
-        while (true) {
+    return std::thread([fd, addr, &trades, &running]() mutable {
+        while (running.load(std::memory_order_acquire)) {
             TradeMsg* slot = nullptr;
             if (!trades.try_acquire_consumer_slot(slot)) { continue; }
             TradeMsg& t = *slot;
@@ -48,5 +49,6 @@ inline std::thread start_trade_sender(TradeMsgRing& trades, const char* dst_ip, 
 
             trades.release_consumer_slot();
         }
+        close(fd);
     });
 }
