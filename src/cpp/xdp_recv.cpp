@@ -3,6 +3,7 @@
 #include <map>
 #include "recv_helper.h"
 #include "match.h"
+#include "send_from_engine.h"
 #include "../cpp_helpers/protocols.hpp"
 #include <cstdlib>
 #include <unistd.h>
@@ -33,8 +34,14 @@ static void detach_xdp() {
 }
 
 int main(int argc, char** argv) {
-    
+    if (argc != 4) {
+        std::cerr << "usage: " << argv[0] << " <ifname> <dst_ip> <dst_port>\n";
+        return 1;
+    }
+
     const char* ifname = argv[1];
+    const char* dst_ip = argv[2];
+    const uint16_t dst_port = static_cast<uint16_t>(std::strtoul(argv[3], nullptr, 10));
     const uint32_t queue_id = 0; // use queue 0
 
     libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
@@ -150,6 +157,9 @@ int main(int argc, char** argv) {
     OrderMsgRing ring;
     TradeMsgRing trade_ring;
     std::thread matcher([&ring, &trade_ring]() { match_loop(ring, trade_ring); });
+    std::thread trade_sender = start_trade_sender(trade_ring, dst_ip, dst_port);
+    matcher.detach();
+    trade_sender.detach();
     // loop: poll Recv ring, handle packets, then recycle buffers
     while (true) {
         pollfd pfd{};
