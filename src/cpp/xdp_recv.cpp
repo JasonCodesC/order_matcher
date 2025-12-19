@@ -1,6 +1,9 @@
 #include <iostream>
 #include <cstring>
-#include "recv_helper.cpp"
+#include <map>
+#include "recv_helper.h"
+#include "book_types.h"
+#include "../cpp_helpers/protocols.hpp"
 #include <cstdlib>
 #include <unistd.h>
 #include <poll.h>
@@ -14,9 +17,17 @@ static constexpr uint32_t NUM_FRAMES = 4096;    // how many packet buffers in UM
 static constexpr uint32_t BATCH = 64;           // process packets in chunks
 static constexpr int UDP_PORT = 9000;                                
 
-static void die(const char* msg) {                                           // simple error helper
-  std::perror(msg);                                                          // print errno string
-  std::exit(1);                                                              // quit
+static void die(const char* msg) { 
+  std::perror(msg);
+  std::exit(1);
+}
+
+static int g_ifindex = -1;
+
+static void detach_xdp() {
+    if (g_ifindex >= 0) {
+        bpf_set_link_xdp_fd(g_ifindex, -1, 0);
+    }
 }
 
 int main(int argc, char** argv) {
@@ -27,7 +38,7 @@ int main(int argc, char** argv) {
     const char* ifname = argv[1];
     const uint32_t queue_id = 0; // use queue 0
 
-    libbpf_set_strict_mode(LIBBPF_STRICT_ALL); //what?
+    libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
 
     // Allocate UMEM 
     void* umem_area = nullptr;
@@ -89,6 +100,8 @@ int main(int argc, char** argv) {
     if (ifindex == 0) {
         die("if_nametoindex");
     }
+    g_ifindex = ifindex;
+    std::atexit(detach_xdp);
 
     if (bpf_set_link_xdp_fd(ifindex, prog_fd, 0) < 0) {  // attach XDP program to that interface
         die("bpf_set_link_xdp_fd");
@@ -131,6 +144,11 @@ int main(int argc, char** argv) {
     std::cout << "Engine listening on " << ifname  << " queue " << queue_id 
         << " for UDP dst port " << UDP_PORT << "\n";
 
+    
+    
+
+    DedupeWindow dd;
+    Books book;
     // loop: poll Recv ring, handle packets, then recycle buffers
     while (true) {
         pollfd pfd{};
@@ -150,8 +168,6 @@ int main(int argc, char** argv) {
             continue; // nothing ready 
         } 
 
-        DedupeWindow dd;
-        OrderBook book;
         for (uint32_t i{}; i < rcvd; i++) {
             xdp_desc* d = xsk_ring_cons__rx_desc(&rx, rx_idx + i);
             uint8_t* frame = (uint8_t*)umem_area + d->addr;

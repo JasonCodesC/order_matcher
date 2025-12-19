@@ -1,6 +1,6 @@
+#pragma once
 
-#include "../cpp_helpers/protocols.hpp"
-#include "order_book.cpp"
+#include "book_types.h"
 #include <cstdint>
 #include <cstring>
 #include <array>
@@ -83,24 +83,39 @@ static inline bool parse_packet(const uint8_t* frame, uint32_t frame_len, Packet
     return true;
 }
 
-    // -------------------- handle_packet: dedupe + switch + call book --------------------
-static inline void handle_packet(const Packet& p, DedupeWindow& dd, OrderBook& book) {
-    // dupes
-    if (dd.is_duplicate(p.seq_num)) {return};
+static inline void handle_packet(const Packet& p, DedupeWindow& dd, Books& books) {
+    if (dd.is_duplicate(p.seq_num)) {return;}
 
-    //send to engine
-    const bool is_buy = (p.side == Order_Type::Buy);
+    // Functor 
+    using NewFn = void(*)(Books&, const Packet&);
+
+    // Two functors one for buy one for sell
+    static constexpr NewFn handler[2] = {
+
+        // sell lambda
+        +[](Books& b, const Packet& x) { b.asks.on_new_limit(x.order_id, x.price_tick, x.qty); },
+
+        // buy lambda
+        +[](Books& b, const Packet& x) { b.bids.on_new_limit(x.order_id, x.price_tick, x.qty); }
+    };
+
     switch (p.msg_type) {
-        case MsgType::NewLimit:
-            book.on_new_limit(p.order_id, is_buy, p.price_tick, p.qty);
+        case MsgType::NewLimit: {
+            handler[(uint8_t)p.side](books, p);
             break;
+        }
         case MsgType::Cancel:
-            book.on_cancel(p.order_id);
-            break;
+            // Change to functors
+            books.bids.on_cancel(p.order_id);
+            books.asks.on_cancel(p.order_id);
+        break;
+
         case MsgType::Modify:
-            book.on_modify(p.order_id, p.price_tick, p.qty);
-            break;
+            books.bids.on_modify(p.order_id, p.price_tick, p.qty);
+            books.asks.on_modify(p.order_id, p.price_tick, p.qty);
+        break;
+
         default:
-            break;
+        break;
     }
 }
