@@ -25,3 +25,10 @@ struct OrderMsg {
   MsgType msg_type;
   Order_Type side;
 };
+
+struct TradeMsg {
+  uint32_t bid_order_id;
+  uint32_t ask_order_id;
+  uint32_t price_tick;
+  uint32_t qty;
+};

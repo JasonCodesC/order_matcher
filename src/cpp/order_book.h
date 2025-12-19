@@ -17,15 +17,10 @@ struct info {
   uint32_t pos_in_level; // index in the vector at that price level
 };
 
-/* ________ CONTAINERS _________*/
-
-//   std::map<uint32_t, std::vector<Order>, std::greater<uint32_t>> for bids
-//   std::map<uint32_t, std::vector<Order>, std::less<uint32_t>> for asks
-//   std::vector<uint32_t, std::vector<Order>> But sorted maybe might be good
 
 template <Order_Type T, typename Container>
 class OrderBook {
-    Container book_;   // price_tick -> vector of orders (FIFO)
+    Container book_;   // price_tick -> vector of orders
     std::unordered_map<uint32_t, info> index_;  // order_id -> where it is
 
     inline void add_to_book(uint32_t order_id, uint32_t price_tick, uint32_t qty) {
@@ -85,5 +80,27 @@ class OrderBook {
     }
 
     inline const Container& raw_levels() const { return book_; }
-};
 
+    inline bool best_price(uint32_t& out_price) const {
+        if (book_.empty()) {return false;}
+        out_price = book_.begin()->first;
+        return true;
+    }
+
+    inline Order* best_order(uint32_t& price_tick) {
+        if (book_.empty()) {return nullptr;}
+        auto it = book_.begin();
+        price_tick = it->first;
+        return &it->second.back();
+    }
+
+    inline void remove_best(uint32_t price_tick) {
+        auto it = book_.find(price_tick);
+        if (it == book_.end()) {return;}
+        auto& level = it->second;
+        const uint32_t oid = level.back().order_id;
+        level.pop_back();
+        index_.erase(oid);
+        if (level.empty()) {book_.erase(it);}
+    }
+};

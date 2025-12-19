@@ -148,7 +148,8 @@ int main(int argc, char** argv) {
 
     DedupeWindow dd;
     OrderMsgRing ring;
-    std::thread matcher([&ring]() { match_loop(ring); });
+    TradeMsgRing trade_ring;
+    std::thread matcher([&ring, &trade_ring]() { match_loop(ring, trade_ring); });
     // loop: poll Recv ring, handle packets, then recycle buffers
     while (true) {
         pollfd pfd{};
@@ -178,8 +179,15 @@ int main(int argc, char** argv) {
             }
             if (dd.is_duplicate(p.seq_num)) {continue;}
 
-            OrderMsg msg{p.seq_num, p.order_id, p.price_tick, p.qty, p.msg_type, p.side};
-            while (!ring.try_push(msg)) {}
+            OrderMsg* slot = nullptr;
+            while (!ring.try_acquire_producer_slot(slot)) {}
+            slot->seq_num = p.seq_num;
+            slot->order_id = p.order_id;
+            slot->price_tick = p.price_tick;
+            slot->qty = p.qty;
+            slot->msg_type = p.msg_type;
+            slot->side = p.side;
+            ring.commit_producer_slot();
         }
 
         // return the same buffers back into the fill ring for reuse

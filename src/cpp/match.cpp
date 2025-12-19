@@ -1,14 +1,13 @@
 #include "match.h"
 #include "book_types.h"
 
-void match_loop(OrderMsgRing& ring) {
+void match_loop(OrderMsgRing& ring, TradeMsgRing& trades) {
     Books book;
 
     while (true) {
-        OrderMsg msg;
-        if (!ring.try_pop(msg)) {
-            continue;
-        }
+        OrderMsg* slot = nullptr;
+        if (!ring.try_acquire_consumer_slot(slot)) { continue; }
+        OrderMsg& msg = *slot;
 
         switch (msg.msg_type) {
             case MsgType::NewLimit:
@@ -38,5 +37,37 @@ void match_loop(OrderMsgRing& ring) {
             default:
             break;
         }
+
+        // match crossing book
+        uint32_t best_bid_price, best_ask_price;
+        while (book.bids.best_price(best_bid_price) && book.asks.best_price(best_ask_price)
+               && best_bid_price >= best_ask_price) {
+
+            uint32_t bid_px, ask_px;
+            Order* bid_o = book.bids.best_order(bid_px);
+            Order* ask_o = book.asks.best_order(ask_px);
+
+            const uint32_t trade_qty = (bid_o->qty < ask_o->qty) ? bid_o->qty : ask_o->qty;
+            // use resting orders price
+            const uint32_t trade_px = (msg.side == Order_Type::Buy) ? ask_px : bid_px;
+
+            // emit trade
+            TradeMsg* tslot = nullptr;
+            while (!trades.try_acquire_producer_slot(tslot)) {}
+            tslot->bid_order_id = bid_o->order_id;
+            tslot->ask_order_id = ask_o->order_id;
+            tslot->price_tick = trade_px;
+            tslot->qty = trade_qty;
+            trades.commit_producer_slot();
+
+            // apply fills
+            bid_o->qty -= trade_qty;
+            ask_o->qty -= trade_qty;
+
+            if (bid_o->qty == 0) { book.bids.remove_best(bid_px); }
+            if (ask_o->qty == 0) { book.asks.remove_best(ask_px); }
+        }
+
+        ring.release_consumer_slot();
     }
 }
