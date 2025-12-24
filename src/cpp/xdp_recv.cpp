@@ -12,6 +12,7 @@
 #include <csignal>
 #include <poll.h>
 #include <sys/mman.h>
+#include <net/if.h>
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h> 
 #if __has_include(<bpf/xsk.h>)
@@ -21,6 +22,7 @@
 #else
 #error "xsk.h not found; install libbpf-dev or libxdp-dev"
 #endif
+
 
 static constexpr uint32_t FRAME_SIZE = 2048;    // size of one packet buffer
 static constexpr uint32_t NUM_FRAMES = 4096;    // how many packet buffers in UMEM
@@ -39,9 +41,25 @@ static void die(const char* msg) {
 static int g_ifindex = -1;
 static std::atomic<bool> g_running(true);
 
+static int attach_xdp(int ifindex, int prog_fd) {
+#if defined(LIBBPF_MAJOR_VERSION) && (LIBBPF_MAJOR_VERSION >= 1)
+    return bpf_xdp_attach(ifindex, prog_fd, 0, nullptr);
+#else
+    return bpf_set_link_xdp_fd(ifindex, prog_fd, 0);
+#endif
+}
+
+static int detach_xdp(int ifindex) {
+#if defined(LIBBPF_MAJOR_VERSION) && (LIBBPF_MAJOR_VERSION >= 1)
+    return bpf_xdp_detach(ifindex, 0, nullptr);
+#else
+    return bpf_set_link_xdp_fd(ifindex, -1, 0);
+#endif
+}
+
 static void detach_xdp() {
     if (g_ifindex >= 0) {
-        bpf_set_link_xdp_fd(g_ifindex, -1, 0);
+        detach_xdp(g_ifindex);
     }
 }
 
@@ -123,8 +141,8 @@ int main() {
     g_ifindex = ifindex;
     std::atexit(detach_xdp);
 
-    if (bpf_set_link_xdp_fd(ifindex, prog_fd, 0) < 0) {  // attach XDP program to that interface
-        die("bpf_set_link_xdp_fd");
+    if (attach_xdp(ifindex, prog_fd) < 0) {  // attach XDP program to that interface
+        die("attach_xdp");
     }
 
     // Create AF_XDP socket 
@@ -192,7 +210,7 @@ int main() {
         } 
 
         for (uint32_t i{}; i < rcvd; i++) {
-            xdp_desc* d = xsk_ring_cons__rx_desc(&rx, rx_idx + i);
+            const xdp_desc* d = xsk_ring_cons__rx_desc(&rx, rx_idx + i);
             uint8_t* frame = (uint8_t*)umem_area + d->addr;
 
             Packet p;
@@ -220,7 +238,7 @@ int main() {
             die("fq reserve (recycle)");   // die if ring is full
         }
         for (uint32_t i{}; i < rcvd; i++) { // for each packet we consumed
-            xdp_desc* d = xsk_ring_cons__rx_desc(&rx, rx_idx + i);  // get its descriptor
+            const xdp_desc* d = xsk_ring_cons__rx_desc(&rx, rx_idx + i);  // get its descriptor
             *xsk_ring_prod__fill_addr(&fq, fq_idx + i) = d->addr;  // return its buffer addr to kernel
         }
         xsk_ring_prod__submit(&fq, rcvd); // submit recycled buffers
