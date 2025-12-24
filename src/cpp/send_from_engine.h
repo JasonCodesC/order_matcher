@@ -7,6 +7,8 @@
 #include <unistd.h>
 #include <thread>
 #include <cstring>
+#include <cstdio>
+#include <cstdlib>
 #include <iostream>
 #include <atomic>
 

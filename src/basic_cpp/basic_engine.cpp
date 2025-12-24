@@ -3,6 +3,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <cstring>
+#include <cstdio>
 #include <iostream>
 
 #include "../cpp_helpers/protocols.hpp"

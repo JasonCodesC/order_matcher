@@ -7,6 +7,8 @@
 #include <thread>
 #include <chrono>
 #include <unistd.h>
+#include <cstdio>
+#include <cstdlib>
 #include <iostream>
 #include <cstdint>
 #include <arpa/inet.h>
