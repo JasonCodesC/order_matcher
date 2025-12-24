@@ -21,15 +21,25 @@ def main():
         print("No latencies to plot")
         return
 
-    arr = np.array(vals)
+    arr = np.array(vals) / 1_000.0  # ns -> us
     pct = np.percentile(arr, [50, 90, 99])
-    print(f"p50={pct[0]:.0f} ns p90={pct[1]:.0f} ns p99={pct[2]:.0f} ns")
+    mean = float(np.mean(arr))
+    median = float(np.median(arr))
+    print(f"p50={pct[0]:.2f} us p90={pct[1]:.2f} us p99={pct[2]:.2f} us")
+    print(f"mean={mean:.2f} us median={median:.2f} us")
 
     plt.figure(figsize=(8, 4))
     plt.hist(arr, bins=50, color="skyblue", edgecolor="black")
-    plt.xlabel("Latency (ns)")
+    mean_s = mean / 1_000_000.0
+    median_s = median / 1_000_000.0
+    plt.axvline(mean, color="red", linestyle="--", linewidth=1.5,
+                label=f"Mean {mean:.2f} us ({mean_s:.6f} s)")
+    plt.axvline(median, color="green", linestyle="--", linewidth=1.5,
+                label=f"Median {median:.2f} us ({median_s:.6f} s)")
+    plt.xlabel("Latency (us)")
     plt.ylabel("Count")
     plt.title("Latency Histogram")
+    plt.legend()
     plt.tight_layout()
     out_path = os.path.join(PLOTS_DIR, "latency_hist.png")
     plt.savefig(out_path)

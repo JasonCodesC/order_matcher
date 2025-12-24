@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <cstdio>
 #include <cstdlib>
+#include <poll.h>
 #include <iostream>
 #include <cstdint>
 #include <arpa/inet.h>
@@ -105,13 +106,39 @@ static void recv_trades_loop() {
         std::ofstream out(LATENCY_FILE, std::ios::app);
         if (!out) { return; }
         std::lock_guard<std::mutex> lg(g_mu);
+        if (g_lat.empty()) { return; }
         for (uint64_t v : g_lat) {
             out << v << "\n";
         }
         g_lat.clear();
     };
 
+    using clock = std::chrono::steady_clock;
+    auto last_flush = clock::now();
+    const auto flush_interval = std::chrono::seconds(7);
+
     while (true) {
+        auto now = clock::now();
+        int timeout_ms = 0;
+        if (now < last_flush + flush_interval) {
+            timeout_ms = (int)std::chrono::duration_cast<std::chrono::milliseconds>(
+                             (last_flush + flush_interval) - now).count();
+        }
+        pollfd pfd{};
+        pfd.fd = fd;
+        pfd.events = POLLIN;
+        int pret = poll(&pfd, 1, timeout_ms);
+        if (pret < 0) {
+            std::perror("poll");
+            std::exit(1);
+        }
+        if (pret == 0) {
+            flush_lat();
+            last_flush = clock::now();
+            continue;
+        }
+        if ((pfd.revents & POLLIN) == 0) { continue; }
+
         uint8_t buf[64]{};
         ssize_t n = recv(fd, buf, sizeof(buf), 0);
         if (n < (ssize_t)sizeof(uint32_t) * 4) { continue; }
@@ -125,6 +152,7 @@ static void recv_trades_loop() {
         std::cout << "TOTAL_NOTIONAL=" << total_notional << "\n";
 
         uint64_t sent_ns = 0;
+        bool should_flush = false;
         {
             std::lock_guard<std::mutex> lg(g_mu);
             auto itb = g_send_ts.find(bid);
@@ -143,8 +171,13 @@ static void recv_trades_loop() {
             if (sent_ns != 0) {
                 const uint64_t lat = now_ns() - sent_ns;
                 g_lat.push_back(lat);
-                if (g_lat.size() >= 100) { flush_lat(); }
+                if (g_lat.size() >= 10) { should_flush = true; }
             }
+        }
+        now = clock::now();
+        if (should_flush || now - last_flush >= flush_interval) {
+            flush_lat();
+            last_flush = now;
         }
     }
 }
