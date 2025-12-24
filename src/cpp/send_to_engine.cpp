@@ -17,7 +17,7 @@
 #include <fstream>
 #include "../cpp_helpers/protocols.hpp"
 
-static constexpr const char* DST_IP = "10.0.0.1";
+static constexpr const char* DST_IP = "192.168.37.128";
 static constexpr uint16_t DST_PORT = 9000;
 static constexpr uint16_t TRADE_LISTEN_PORT = 9001;
 static constexpr const char* LATENCY_FILE = "data/latencies.csv";

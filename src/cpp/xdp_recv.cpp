@@ -20,8 +20,8 @@ static constexpr uint32_t FRAME_SIZE = 2048;    // size of one packet buffer
 static constexpr uint32_t NUM_FRAMES = 4096;    // how many packet buffers in UMEM
 static constexpr uint32_t BATCH = 64;           // process packets in chunks
 static constexpr int UDP_PORT = 9000;                                
-static constexpr const char* IFACE_NAME = "eth0";
-static constexpr const char* TRADE_DST_IP = "10.0.0.1";
+static constexpr const char* IFACE_NAME = "ens33";
+static constexpr const char* TRADE_DST_IP = "192.168.37.1";
 static constexpr uint16_t TRADE_DST_PORT = 9001;
 
 __attribute__((noinline))
