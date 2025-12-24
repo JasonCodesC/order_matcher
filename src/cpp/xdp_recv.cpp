@@ -14,7 +14,13 @@
 #include <sys/mman.h>
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h> 
+#if __has_include(<bpf/xsk.h>)
 #include <bpf/xsk.h>
+#elif __has_include(<xdp/xsk.h>)
+#include <xdp/xsk.h>
+#else
+#error "xsk.h not found; install libbpf-dev or libxdp-dev"
+#endif
 
 static constexpr uint32_t FRAME_SIZE = 2048;    // size of one packet buffer
 static constexpr uint32_t NUM_FRAMES = 4096;    // how many packet buffers in UMEM
