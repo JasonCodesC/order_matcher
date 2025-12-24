@@ -30,7 +30,7 @@ static constexpr uint32_t FRAME_SIZE = 2048;    // size of one packet buffer
 static constexpr uint32_t NUM_FRAMES = 4096;    // how many packet buffers in UMEM
 static constexpr uint32_t BATCH = 64;           // process packets in chunks
 static constexpr int UDP_PORT = 9000;                                
-static constexpr const char* IFACE_NAME = "enp2s0";
+static constexpr const char* IFACE_NAME = "ens160";
 static constexpr const char* TRADE_DST_IP = "192.168.37.1";
 static constexpr uint16_t TRADE_DST_PORT = 9001;
 
@@ -158,14 +158,21 @@ int main() {
 
     xsk_socket_config xcfg{};
     xcfg.rx_size = 2048;
-    xcfg.tx_size = 0;
+    xcfg.tx_size = 1024; // some kernels reject tx_size=0
+#ifdef XSK_LIBBPF_FLAGS__INHIBIT_PROG_LOAD
+    xcfg.libbpf_flags = XSK_LIBBPF_FLAGS__INHIBIT_PROG_LOAD;
+#else
     xcfg.libbpf_flags = 0;
+#endif
     xcfg.xdp_flags = kXdpFlags;
     xcfg.bind_flags = kBindFlags;
 
     // bind socket to (ifname, queue) and create rings
-    if (xsk_socket__create(&xsk, ifname, queue_id, umem, &rx, &tx, &xcfg) != 0) {
-        die("xsk_socket__create");
+    int err = xsk_socket__create(&xsk, ifname, queue_id, umem, &rx, &tx, &xcfg);
+    if (err != 0) {
+        std::cerr << "xsk_socket__create failed: " << std::strerror(-err)
+                  << " (" << err << ")\n";
+        std::exit(1);
     }
 
     int xsk_fd = xsk_socket__fd(xsk);  // fd for polling
