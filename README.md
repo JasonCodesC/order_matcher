@@ -1,1 +1,1 @@
-Copy mode vs zero copy for bypass
+add note copy mode vs zero copy for bypass, zero wont work bc ubnutu VM

@@ -43,9 +43,7 @@ static void handle_sig(int) {
     g_running.store(false, std::memory_order_release);
 }
 
-int main(int argc, char** argv) {
-
-    (void)argc; (void)argv;
+int main() {
 
     const char* ifname = IFACE_NAME;
     const char* dst_ip = TRADE_DST_IP;
