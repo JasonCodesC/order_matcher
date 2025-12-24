@@ -14,6 +14,7 @@
 #include <poll.h>
 #include <sys/mman.h>
 #include <net/if.h>
+#include <linux/if_link.h>
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h> 
 #if __has_include(<bpf/xsk.h>)
@@ -41,26 +42,28 @@ static void die(const char* msg) {
 
 static int g_ifindex = -1;
 static std::atomic<bool> g_running(true);
+static constexpr uint32_t kXdpFlags = XDP_FLAGS_DRV_MODE;
+static constexpr uint32_t kBindFlags = XDP_ZEROCOPY;
 
-static int attach_xdp(int ifindex, int prog_fd) {
+static int attach_xdp(int ifindex, int prog_fd, uint32_t flags) {
 #if defined(LIBBPF_MAJOR_VERSION) && (LIBBPF_MAJOR_VERSION >= 1)
-    return bpf_xdp_attach(ifindex, prog_fd, 0, nullptr);
+    return bpf_xdp_attach(ifindex, prog_fd, flags, nullptr);
 #else
-    return bpf_set_link_xdp_fd(ifindex, prog_fd, 0);
+    return bpf_set_link_xdp_fd(ifindex, prog_fd, flags);
 #endif
 }
 
-static int detach_xdp(int ifindex) {
+static int detach_xdp(int ifindex, uint32_t flags) {
 #if defined(LIBBPF_MAJOR_VERSION) && (LIBBPF_MAJOR_VERSION >= 1)
-    return bpf_xdp_detach(ifindex, 0, nullptr);
+    return bpf_xdp_detach(ifindex, flags, nullptr);
 #else
-    return bpf_set_link_xdp_fd(ifindex, -1, 0);
+    return bpf_set_link_xdp_fd(ifindex, -1, flags);
 #endif
 }
 
 static void detach_xdp() {
     if (g_ifindex >= 0) {
-        detach_xdp(g_ifindex);
+        detach_xdp(g_ifindex, kXdpFlags);
     }
 }
 
@@ -142,7 +145,7 @@ int main() {
     g_ifindex = ifindex;
     std::atexit(detach_xdp);
 
-    if (attach_xdp(ifindex, prog_fd) < 0) {  // attach XDP program to that interface
+    if (attach_xdp(ifindex, prog_fd, kXdpFlags) < 0) {  // attach XDP program to that interface
         die("attach_xdp");
     }
 
@@ -157,8 +160,8 @@ int main() {
     xcfg.rx_size = 2048;
     xcfg.tx_size = 0;
     xcfg.libbpf_flags = 0;
-    xcfg.xdp_flags = 0;
-    xcfg.bind_flags = XDP_COPY; //Copy mode may change to ZERO
+    xcfg.xdp_flags = kXdpFlags;
+    xcfg.bind_flags = kBindFlags;
 
     // bind socket to (ifname, queue) and create rings
     if (xsk_socket__create(&xsk, ifname, queue_id, umem, &rx, &tx, &xcfg) != 0) {
