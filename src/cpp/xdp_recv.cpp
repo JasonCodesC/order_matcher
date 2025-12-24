@@ -42,8 +42,8 @@ static void die(const char* msg) {
 
 static int g_ifindex = -1;
 static std::atomic<bool> g_running(true);
-static constexpr uint32_t kXdpFlags = XDP_FLAGS_DRV_MODE;
-static constexpr uint32_t kBindFlags = XDP_ZEROCOPY;
+static constexpr uint32_t kXdpFlags = XDP_FLAGS_SKB_MODE;
+static constexpr uint32_t kBindFlags = XDP_COPY;
 
 static int attach_xdp(int ifindex, int prog_fd, uint32_t flags) {
 #if defined(LIBBPF_MAJOR_VERSION) && (LIBBPF_MAJOR_VERSION >= 1)
