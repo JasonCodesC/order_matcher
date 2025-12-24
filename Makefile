@@ -17,7 +17,7 @@ all: $(BPF_OBJ) $(ENGINE) $(SENDER)
 $(BPF_OBJ): src/cpp/xdp_kernal.c
 	$(CC) $(BPF_CFLAGS) -target bpf -c $< -o $@
 
-$(ENGINE): src/cpp/xdp_recv.cpp src/cpp/match.cpp $(BPF_OBJ)
+$(ENGINE): src/cpp/xdp_recv.cpp src/cpp/match.cpp | $(BPF_OBJ)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $^ -o $@ $(LDFLAGS)
 
 $(SENDER): src/cpp/send_to_engine.cpp

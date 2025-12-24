@@ -235,7 +235,8 @@ int main() {
         uint32_t fq_idx = 0; // fill ring index
 
         // reserve space to give buffers back
-        if (xsk_ring_prod__reserve(&fq, rcvd, &fq_idx) != (int)rcvd) {    
+        uint32_t reserved = xsk_ring_prod__reserve(&fq, rcvd, &fq_idx);
+        if (reserved != rcvd) {    
             die("fq reserve (recycle)");   // die if ring is full
         }
         for (uint32_t i{}; i < rcvd; i++) { // for each packet we consumed
