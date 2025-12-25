@@ -21,7 +21,7 @@ def main():
         print("No latencies to plot")
         return
 
-    arr = np.array(vals) / 1_000.0  # ns -> us
+    arr = np.array(vals) / 1_000.0
     pct = np.percentile(arr, [50, 90, 99])
     mean = float(np.mean(arr))
     median = float(np.median(arr))

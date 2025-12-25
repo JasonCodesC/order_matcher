@@ -2,7 +2,8 @@
 #include "book_types.h"
 
 void match_loop(OrderMsgRing& ring, TradeMsgRing& trades, std::atomic<bool>& running,
-                std::atomic<uint64_t>& trades_total) {
+        std::atomic<uint64_t>& trades_total) {
+
     Books book;
     SpinWait ring_wait;
     SpinWait trade_wait;
@@ -21,7 +22,8 @@ void match_loop(OrderMsgRing& ring, TradeMsgRing& trades, std::atomic<bool>& run
             case MsgType::NewLimit:
                 if (msg.side == Order_Type::Buy) {
                     book.bids.on_new_limit(msg.order_id, msg.price_tick, msg.qty);
-                } else {
+                } 
+                else {
                     book.asks.on_new_limit(msg.order_id, msg.price_tick, msg.qty);
                 }
                 break;
@@ -29,21 +31,23 @@ void match_loop(OrderMsgRing& ring, TradeMsgRing& trades, std::atomic<bool>& run
             case MsgType::Cancel:
                 if (msg.side == Order_Type::Buy) {
                     book.bids.on_cancel(msg.order_id);
-                } else {
+                } 
+                else {
                     book.asks.on_cancel(msg.order_id);
                 }
-            break;
+                break;
 
             case MsgType::Modify:
                 if (msg.side == Order_Type::Buy) {
                     book.bids.on_modify(msg.order_id, msg.price_tick, msg.qty);
-                } else {
+                } 
+                else {
                     book.asks.on_modify(msg.order_id, msg.price_tick, msg.qty);
                 }
-            break;
+                break;
 
             default:
-            break;
+                break;
         }
 
         // match crossing book

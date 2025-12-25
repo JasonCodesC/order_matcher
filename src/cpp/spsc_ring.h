@@ -10,23 +10,15 @@ struct SpinWait {
     uint32_t count = 0;
 
     inline void pause() {
-#if defined(__x86_64__) || defined(__i386__)
-        if (count < 64) {
-            __builtin_ia32_pause();
-        } else if (count < 128) {
-            std::this_thread::yield();
-        } else {
-            std::this_thread::sleep_for(std::chrono::microseconds(1));
-        }
-#else
         if (count < 64) {
             std::atomic_signal_fence(std::memory_order_relaxed);
-        } else if (count < 128) {
+        } 
+        else if (count < 128) {
             std::this_thread::yield();
-        } else {
+        } 
+        else {
             std::this_thread::sleep_for(std::chrono::microseconds(1));
         }
-#endif
         ++count;
     }
 
@@ -46,7 +38,7 @@ class SpscRing {
 
     public:
 
-    // acquire slot pointer, then commit when populated
+    // acquire slot pointer then commit when populated
     inline bool try_acquire_producer_slot(T*& slot) {
         const uint32_t head = read_ptr.load(std::memory_order_relaxed);
         if (head - cached_write_ptr == N) {
@@ -62,7 +54,6 @@ class SpscRing {
         read_ptr.store(head + 1, std::memory_order_release);
     }
 
-    // zero-copy consumer API: peek slot pointer, then consume when done
     inline bool try_acquire_consumer_slot(T*& slot) {
         const uint32_t tail = write_ptr.load(std::memory_order_relaxed);
         if (cached_read_ptr == tail) {

@@ -67,6 +67,7 @@ This project was inspired by Carl Cook and David Gross. Both gave talks on fast 
 - UDP sender -> AF_XDP socket -> SPSC ring -> match loop -> SPSC ring -> trade sender.
 - Matching engine: price levels stored in vectors with a bitmap to jump to best price in constant time (cheaper than std::hash).
 - Lock-free: this project is lock-free so threads only have to wait for the rings to start filling, each thread reads from a ring and performs its operations independently of anything else.
+- The rings are also aligned on the cache line size (64 bytes)
 
 
 ## Notes on XDP Mode and the latencies

@@ -6,7 +6,7 @@ static constexpr uint32_t PRICE_MIN = 5000;
 static constexpr uint32_t PRICE_MAX = 15000;
 static constexpr uint32_t MAX_ORDER_ID = 200000; // update if order ids exceed this
 
-// Prior std::map-based books (kept for easy comparison).
+// Prior std::map-based books
 // #include <functional>
 // #include <map>
 // #include <vector>

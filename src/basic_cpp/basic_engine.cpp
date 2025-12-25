@@ -62,21 +62,24 @@ int main() {
             case MsgType::NewLimit:
                 if (msg.side == Order_Type::Buy) {
                     book.bids.on_new_limit(msg.order_id, msg.price_tick, msg.qty);
-                } else {
+                } 
+                else {
                     book.asks.on_new_limit(msg.order_id, msg.price_tick, msg.qty);
                 }
                 break;
             case MsgType::Cancel:
                 if (msg.side == Order_Type::Buy) {
                     book.bids.on_cancel(msg.order_id);
-                } else {
+                } 
+                else {
                     book.asks.on_cancel(msg.order_id);
                 }
                 break;
             case MsgType::Modify:
                 if (msg.side == Order_Type::Buy) {
                     book.bids.on_modify(msg.order_id, msg.price_tick, msg.qty);
-                } else {
+                } 
+                else {
                     book.asks.on_modify(msg.order_id, msg.price_tick, msg.qty);
                 }
                 break;
@@ -91,7 +94,7 @@ int main() {
             uint32_t bid_px, ask_px;
             Order* bid_o = book.bids.best_order(bid_px);
             Order* ask_o = book.asks.best_order(ask_px);
-            if (!bid_o || !ask_o) { break; }
+            if (!bid_o || !ask_o) {break;}
 
             const uint32_t trade_qty = (bid_o->qty < ask_o->qty) ? bid_o->qty : ask_o->qty;
             const uint32_t trade_px = (msg.side == Order_Type::Buy) ? ask_px : bid_px;
@@ -109,7 +112,7 @@ int main() {
                 htonl(wire.qty)
             };
             sendto(trade_fd, &out, sizeof(out), 0,
-                         reinterpret_cast<sockaddr*>(&trade_addr), sizeof(trade_addr));
+                reinterpret_cast<sockaddr*>(&trade_addr), sizeof(trade_addr));
 
             bid_o->qty -= trade_qty;
             ask_o->qty -= trade_qty;
