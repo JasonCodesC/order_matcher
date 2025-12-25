@@ -8,4 +8,6 @@ perf record was bad for system-wide and user-space-only bc waiting dominated.
 
 q tracking
 
-Measure with counters: track orders/sec and trades/sec inside the engine.
+V1 stats:
+
+

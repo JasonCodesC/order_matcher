@@ -228,6 +228,10 @@ int main() {
         uint64_t last_orders = 0;
         uint64_t last_trades = 0;
         uint64_t last_ts = 0;
+        uint64_t next_sample = 0;
+        const uint64_t start_offset = 250'000'000ULL;
+        const uint64_t step = 250'000'000ULL;
+        const uint64_t end_offset = 1'250'000'000ULL;
         while (g_running.load(std::memory_order_acquire)) {
             if (!stats_started.load(std::memory_order_acquire)) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -235,27 +239,32 @@ int main() {
             }
             uint64_t now = steady_ns();
             if (last_ts == 0) {
-                last_ts = now;
+                last_ts = stats_start_ns.load(std::memory_order_relaxed);
                 last_orders = orders_total.load(std::memory_order_relaxed);
                 last_trades = trades_total.load(std::memory_order_relaxed);
+                next_sample = last_ts + start_offset;
                 continue;
             }
-            uint64_t elapsed = now - last_ts;
-            if (elapsed < 1'000'000'000ULL) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            if (now < next_sample) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
                 continue;
             }
             uint64_t orders = orders_total.load(std::memory_order_relaxed);
             uint64_t trades = trades_total.load(std::memory_order_relaxed);
-            double sec = (now - stats_start_ns.load(std::memory_order_relaxed)) / 1e9;
+            uint64_t elapsed = next_sample - last_ts;
+            double sec = (next_sample - stats_start_ns.load(std::memory_order_relaxed)) / 1e9;
             double ops = (orders - last_orders) * 1e9 / (double)elapsed;
             double tps = (trades - last_trades) * 1e9 / (double)elapsed;
             out << std::fixed << std::setprecision(3)
                 << sec << "," << ops << "," << tps << "," << orders << "," << trades << "\n";
             out.flush();
-            last_ts = now;
+            last_ts = next_sample;
             last_orders = orders;
             last_trades = trades;
+            next_sample += step;
+            if (next_sample - stats_start_ns.load(std::memory_order_relaxed) > end_offset) {
+                break;
+            }
         }
     });
     // loop: poll Recv ring, handle packets, then recycle buffers
