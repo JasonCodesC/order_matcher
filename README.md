@@ -103,6 +103,7 @@ Initially I went into this project assuming I could use perf for everything and 
 
 This was my inital engine which was already kinda pretty optimized as I had watched a few videos on this and didn't do that bad of a job.
 
+
 | sec  | orders_per_sec | trades_per_sec | total_orders | total_trades |
 |-----:|---------------:|---------------:|------------:|-------------:|
 | 0.003 | 41600.000 | 30400.000 | 126 | 86 |
@@ -183,6 +184,7 @@ Here I used a bitset to track which price levels are non-empty and jump to the n
 
 Also replaced the order_id -> info lookup from unordered_map to a flat array for faster, cache-friendly access without the std::hash overhead.
 
+
 | sec  | orders_per_sec | trades_per_sec | total_orders | total_trades |
 |-----:|---------------:|---------------:|------------:|-------------:|
 | 0.003 | 0.000 | 0.000 | 319 | 250 |
@@ -203,9 +205,10 @@ Also replaced the order_id -> info lookup from unordered_map to a flat array for
 | 0.040 | 0.000 | 0.000 | 2000 | 1591 |
 
 
-V5:
+### V5 stats:
 
-I used thread pinning here. My VM is allocated 5 cores and so I pinned 1-3 on the XDP, Matcher, and Output respectivly and left core 0 for OS activities and core 4 for the stats I was doing. 
+I used thread pinning here. My VM is allocated 5 cores and so I pinned 1-3 on the XDP, Matcher, and Output respectivly and left core 0 for OS activities and core 4 for the stats I was doing. Note that because I am on a VM this isn't hard pinning like on the physical CPU but it still should help and ended up helping
+
 
 | sec  | orders_per_sec | trades_per_sec | total_orders | total_trades |
 |-----:|---------------:|---------------:|------------:|-------------:|
