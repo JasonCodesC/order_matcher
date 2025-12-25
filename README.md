@@ -3,7 +3,7 @@
 
 ## Overview
 
-This project explores a low latency order matching engine where packets are sent over UDP and ingested directly from the network card via AF_XDP. This project also focuses on profiling driven optimization using perf and timers. The goal was to learn how to write a kernal bypass, quantify bottlenecks, and iteratively improve throughput and latency.
+This project explores a low-latency order matching engine where packets are sent over UDP and ingested directly from the network card via AF_XDP. This project also focuses on profiling-driven optimization using perf and timers. The goal was to learn how to build an AF_XDP ingest path, quantify bottlenecks, and iteratively improve throughput and latency.
 
 ## System Design
 
@@ -20,16 +20,16 @@ struct Packet {
 };
 ```
 
-We are assuming the same ticker for this engine as it makes testing and profiling much easier to improve upon. To add more tickers all we need is a few hashmaps and some extra logic and seeing that this project was mainly about improving networking, profiling, and modern C++ skills I didn't feel the need to include it. 
+We are assuming the same ticker for this engine as it makes testing and profiling much easier to improve upon. To add more tickers all we need is a few hash maps and some extra logic and seeing that this project was mainly about improving networking, profiling, and modern C++ skills I didn't feel the need to include it. 
 
-The sending server has two threads, one sending out orders with somewhat random quantities and price ticks. The other thread recives packets and logs the latencies based on the recieving time and the last order sent. 
+The sending server has two threads, one sending out orders with somewhat random quantities and price ticks. The other thread receives packets and logs the latencies based on the receiving time and the last order sent. 
 
-We have two types of order matching servers. One is a basic engine that is single threaded and uses UDP sockets. The other uses AF_XDP along with three different threads and two different SPSC (single producer single consumer) Queues. I tested out two different data structures for efficent matching and tried a few more optimizations like CPU pinning.
+We have two types of order matching servers. One is a basic engine that is single threaded and uses UDP sockets. The other uses AF_XDP along with three different threads and two different SPSC (single-producer single-consumer) queues. I tested out two different data structures for efficient matching and tried a few more optimizations like CPU pinning.
 
 
 ### Note:
 
-This project was inspired by Carl Cook and David Gross. Both gave talks on fast trading systems in C++ at cppcon 2017 and 2024 respectivley and I did take some ideas from them. 
+This project was inspired by Carl Cook and David Gross. Both gave talks on fast trading systems in C++ at CppCon 2017 and 2024 respectively and I did take some ideas from them. 
 
 ## File Structure
 
@@ -66,14 +66,14 @@ This project was inspired by Carl Cook and David Gross. Both gave talks on fast 
 ## Architecture
 - UDP sender -> AF_XDP socket -> SPSC ring -> match loop -> SPSC ring -> trade sender.
 - Matching engine: price levels stored in vectors with a bitmap to jump to best price in constant time (cheaper than std::hash).
-- Lock Free: this project is lock free so threads only have to wait for the rings to start filling, each from reads from a ring and preforms its operations on it independently of anything else.
+- Lock-free: this project is lock-free so threads only have to wait for the rings to start filling, each thread reads from a ring and performs its operations independently of anything else.
 
 
 ## Notes on XDP Mode and the latencies
 
 This runs in XDP copy (SKB) mode on the VM because the virtual NIC does not support native/zero-copy XDP. The code still uses AF_XDP and the same control flow, but packets are copied by the kernel in this environment (sadly).
 
-Also because this is running on a VM on a Mac the latencies are much higher than FPGA linux boss systems so don't pay too much attention to the microsecond counts as the % change of speedup is really whats important here.
+Also because this is running on a VM on a Mac the latencies are much higher than FPGA Linux box systems so don't pay too much attention to the microsecond counts as the % change of speedup is really what's important here.
 
 ## How to Run (VM)
 From repo root:
@@ -95,7 +95,7 @@ I hardcoded the IPs and Iface so you probably need to change this stuff around o
 
 ## How I went about profiling:
 
-Initially I went into this project assuming I could use perf for everything and all would be well but I was very much wrong. Perf stat doesn't work on the VM so I couldn't find any info on how I was preforming on branches or the cache. Perf record was also pretty useless because the vast majority of the time my program was spending in the queues waiting for data so I wasn't even able to figure out which functions were slow. If I had two linux machines than these would have been pretty easy to use but I have to play with the cards I'm dealt so I decided to keep track of throughput statistics and latency (Trade executed time - Last order sent in the trade) and improve from there. 
+Initially I went into this project assuming I could use perf for everything and all would be well but I was very much wrong. Perf stat doesn't work on the VM so I couldn't find any info on how I was performing on branches or the cache. Perf record was also pretty useless because the vast majority of the time my program was spending in the queues waiting for data so I wasn't even able to figure out which functions were slow. If I had two Linux machines then these would have been pretty easy to use but I have to play with the cards I'm dealt so I decided to keep track of throughput statistics and latency (trade executed time - last order sent in the trade) and improve from there. 
 
 ## Results (Throughput Statistics):
 
@@ -127,7 +127,7 @@ This was my inital engine which was already kinda pretty optimized as I had watc
 
 ### V2 stats:
 
-The zeros above in between massive trades/sec tell us this engine isn't dealing with compute-bound slowdowns i.e. are matching logic is pretty solid. So to improve upon V1 we will try and smooth out the input to reduce idle gaps. We will make our rings/buffers bigger to absorb burts of orders and will use a hybrid backoff so that idle spin is reduced. 
+The zeros above in between massive trades/sec tell us this engine isn't dealing with compute-bound slowdowns i.e. our matching logic is pretty solid. So to improve upon V1 we will try and smooth out the input to reduce idle gaps. We will make our rings/buffers bigger to absorb bursts of orders and will use a hybrid backoff so that idle spin is reduced. 
 
 
 | sec  | orders_per_sec | trades_per_sec | total_orders | total_trades |
@@ -152,7 +152,7 @@ The zeros above in between massive trades/sec tell us this engine isn't dealing 
 
 ### V3 stats:
 
-Now that we arent dealing with the 0s lets try and increase throughput and decrease latency by using another data structure than the pointer based std::map. I chose std::vector here as it has great cache locality and is dynamic so we can grow it as needed. (I did try to reserve a size but expierenced a slowdown due to reserving too big of a size, so in the future I may try to find a better resizing method).
+Now that we aren't dealing with the 0s let's try and increase throughput and decrease latency by using another data structure than the pointer based std::map. I chose std::vector here as it has great cache locality and is dynamic so we can grow it as needed. (I did try to reserve a size but experienced a slowdown due to reserving too big of a size, so in the future I may try to find a better resizing method).
 
 
 | sec  | orders_per_sec | trades_per_sec | total_orders | total_trades |
@@ -207,7 +207,7 @@ Also replaced the order_id -> info lookup from unordered_map to a flat array for
 
 ### V5 stats:
 
-I used thread pinning here. My VM is allocated 5 cores and so I pinned 1-3 on the XDP, Matcher, and Output respectivly and left core 0 for OS activities and core 4 for the stats I was doing. Note that because I am on a VM this isn't hard pinning like on the physical CPU but it still should help and ended up helping
+I used thread pinning here. My VM is allocated 5 cores and so I pinned 1-3 on the XDP, Matcher, and Output respectively and left core 0 for OS activities and core 4 for the stats I was doing. Note that because I am on a VM this isn't hard pinning like on the physical CPU but it still should help and ended up helping
 
 
 | sec  | orders_per_sec | trades_per_sec | total_orders | total_trades |
@@ -236,28 +236,46 @@ Below are histograms for the respective versions showing the latency distributio
 Baseline (basic engine):
 ![Basic engine](plots/basic_engine.png)
 
-Engine V1:
+### Engine V1:
+
 ![Engine V1](plots/engine_v1.png)
 
-Engine V2:
+### Engine V2:
+
 ![Engine V2](plots/engine_v2.png)
 
-Engine V3:
+### Engine V3:
+
 ![Engine V3](plots/engine_v3.png)
 
-Engine V4:
+### Engine V4:
+
 ![Engine V4](plots/engine_v4.png)
 
-Engine V5:
+### Engine V5:
+
 ![Engine V5](plots/engine_v5.png)
 
 
-## Optimization Summary
+## Optimization Summary and Speedup Table
+
 - V1: baseline AF_XDP path with ring buffers and match loop.
 - V2: larger rings plus hybrid spin/backoff to reduce idle overhead.
 - V3: vector-based price levels to reduce pointer chasing.
 - V4: bitmap + bit-scan to jump to best price and flat array for order_id lookup.
 - V5: thread pinning to reduce cross-core contention.
+
+
+| Version | Mean (us) | Median (us) | Mean speedup vs Basic | Median speedup vs Basic | Mean speedup vs Prev | Median speedup vs Prev |
+|:--|--:|--:|--:|--:|--:|--:|
+| Basic | 32987.66 | 35747.54 | 1.000x | 1.000x | - | - |
+| V1 | 15218.90 | 15274.19 | 2.168x | 2.340x | 2.168x | 2.340x |
+| V2 | 14420.73 | 15209.12 | 2.288x | 2.350x | 1.055x | 1.004x |
+| V3 | 14353.45 | 14818.33 | 2.298x | 2.412x | 1.005x | 1.026x |
+| V4 | 11667.10 | 12046.52 | 2.827x | 2.967x | 1.230x | 1.230x |
+| V5 | 9277.15 | 8463.50 | 3.556x | 4.224x | 1.258x | 1.423x |
+
+
 
 
 ## Comprehensive File Overview
@@ -282,4 +300,6 @@ Engine V5:
 
 ## Final Thoughts:
 
-This was a fun project and I learned a lot. I definitley want to get better at linux programming and perf but I think this was a great start.
+This was a fun project and I learned a lot. I definitely want to get better at Linux programming and perf but I think this was a great start.
+
+Author: Jason Majoros
