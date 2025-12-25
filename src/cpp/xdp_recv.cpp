@@ -27,7 +27,7 @@
 
 
 static constexpr uint32_t FRAME_SIZE = 2048;    // size of one packet buffer
-static constexpr uint32_t NUM_FRAMES = 4096;    // how many packet buffers in UMEM
+static constexpr uint32_t NUM_FRAMES = 16384;    // how many packet buffers in UMEM
 static constexpr uint32_t BATCH = 64;           // process packets in chunks
 static constexpr int UDP_PORT = 9000;                                
 static constexpr const char* IFACE_NAME = "ens160";
@@ -157,8 +157,8 @@ int main() {
     std::memset(&tx, 0, sizeof(tx));
 
     xsk_socket_config xcfg{};
-    xcfg.rx_size = 2048;
-    xcfg.tx_size = 1024; // some kernels reject tx_size=0
+    xcfg.rx_size = 4096;
+    xcfg.tx_size = 2048; // some kernels reject tx_size=0
 #ifdef XSK_LIBBPF_FLAGS__INHIBIT_PROG_LOAD
     xcfg.libbpf_flags = XSK_LIBBPF_FLAGS__INHIBIT_PROG_LOAD;
 #else
