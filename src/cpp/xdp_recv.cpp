@@ -231,7 +231,7 @@ int main() {
         uint64_t next_sample = 0;
         const uint64_t start_offset = 2'500'000ULL;
         const uint64_t step = 2'500'000ULL;
-        const uint64_t end_offset = 30'000'000ULL;
+        const uint64_t end_offset = 50'000'000ULL;
         while (g_running.load(std::memory_order_acquire)) {
             if (!stats_started.load(std::memory_order_acquire)) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
