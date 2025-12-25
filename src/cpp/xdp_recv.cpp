@@ -17,6 +17,8 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <pthread.h>
+#include <sched.h>
 #include <net/if.h>
 #include <linux/if_link.h>
 #include <bpf/libbpf.h>
@@ -78,6 +80,36 @@ static void detach_xdp() {
 
 static void handle_sig(int) {
     g_running.store(false, std::memory_order_release);
+}
+
+static bool pin_thread_to_cpu(pthread_t tid, int cpu, const char* label) {
+#if defined(__linux__)
+    long cpu_count = sysconf(_SC_NPROCESSORS_ONLN);
+    if (cpu < 0 || cpu_count <= 0 || cpu >= cpu_count) {
+        std::cerr << "pin " << label << " skipped: cpu " << cpu
+                  << " not in [0," << (cpu_count - 1) << "]\n";
+        return false;
+    }
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    CPU_SET(cpu, &set);
+    int rc = pthread_setaffinity_np(tid, sizeof(set), &set);
+    if (rc != 0) {
+        std::cerr << "pin " << label << " to cpu " << cpu
+                  << " failed: " << std::strerror(rc) << "\n";
+        return false;
+    }
+    return true;
+#else
+    (void)tid;
+    (void)cpu;
+    (void)label;
+    return false;
+#endif
+}
+
+static void pin_current_thread(int cpu, const char* label) {
+    pin_thread_to_cpu(pthread_self(), cpu, label);
 }
 
 int main() {
@@ -213,10 +245,14 @@ int main() {
     std::atomic<bool> stats_started{false};
     std::atomic<uint64_t> stats_start_ns{0};
 
+    pin_current_thread(1, "xdp_recv_main");
+
     std::thread matcher([&ring, &trade_ring, &trades_total]() {
         match_loop(ring, trade_ring, g_running, trades_total);
     });
+    pin_thread_to_cpu(matcher.native_handle(), 2, "matcher");
     std::thread trade_sender = start_trade_sender(trade_ring, dst_ip, dst_port, g_running);
+    pin_thread_to_cpu(trade_sender.native_handle(), 3, "trade_sender");
     std::thread stats_thread([&orders_total, &trades_total, &stats_started, &stats_start_ns]() {
         std::filesystem::create_directories("data");
         std::ofstream out("data/stats.csv", std::ios::trunc);
@@ -267,6 +303,7 @@ int main() {
             }
         }
     });
+    pin_thread_to_cpu(stats_thread.native_handle(), 4, "stats");
     // loop: poll Recv ring, handle packets, then recycle buffers
     while (g_running.load(std::memory_order_acquire)) {
         pollfd pfd{};
