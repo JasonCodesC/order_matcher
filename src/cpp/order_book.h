@@ -128,12 +128,14 @@ class VectorOrderBook {
     bool has_best_{false};
     uint32_t best_price_{0};
 
+public:
     VectorOrderBook() {
         for (auto& level : levels_) {
             level.orders.reserve(kReservePerLevel);
         }
     }
 
+private:
     inline bool in_range(uint32_t price) const {
         return price >= MinPrice && price <= MaxPrice;
     }
