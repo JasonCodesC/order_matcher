@@ -1,24 +1,100 @@
-# Order Matching Engine
+# Order Matching Engine 
+
 
 ## Overview
 
-I did this project in an effort to get myself more comfortable with advanced networking techniques (AF_XDP) and to also get better at profiling and finding where I can make speedups in my code. 
+This project explores a low latency order matching engine where packets are sent over UDP and ingested directly from the network card via AF_XDP. This project also focuses on profiling driven optimization using perf and timers. The goal was to learn how to write a kernal bypass, quantify bottlenecks, and iteratively improve throughput and latency.
+
+## System Design
+
+We are sending packets (orders) from a server to the order matching servers via UDP. The structure of a packet follows below.
+
+struct Packet {
+  uint32_t seq_num;     // for dupes
+  uint32_t order_id;    // unique id 
+  uint32_t price_tick;  // 1 => $0.01 so 10123 = $101.23
+  uint32_t qty;         // qty
+  MsgType msg_type;     // New limit, cancel or modify
+  Order_Type side;      // Sell, Buy
+};
+
+We are assuming the same ticker for this engine as it makes testing and profiling much easier to improve upon. To add more tickers all we need is a few hashmaps and some extra logic. 
+
+The sending server has two threads, one sending out 20000 orders with somewhat random quantities and price ticks. The other thread recives packets and logs the latencies based on the recieving time and the last order sent. 
+
+We have two types of order matching servers. One is a basic engine that is single threaded and uses UDP sockets. The other uses AF_XDP along with three different threads and two different SPSC (single producer single consumer) Queues. I tested out two different data structures for efficent matching and tried a few more optimizations like CPU pinning.
 
 
-add note copy mode vs zero copy for bypass, zero wont work bc ubnutu VM
+### Note:
+
+This project was inspired by Carl Cook and David Gross. Both gave talks on fast trading systems in C++ at cppcon 2017 and 2024 respectivley and I did take some ideas from them. 
+
+## File Structure
+
+```
+/order_matcher
+│── Makefile
+│── README.md
+│── /data                       # Holds stats and latencies (temporarily)
+│── /plots                      # Plots of latency distributions
+│── /src
+│   ├── /basic_cpp
+│   │   └── basic_engine.cpp    # Basic Single Threaded Engine with UDP
+│   ├── /cpp                    # Advanced Engine
+│   │   ├── book_types.h
+│   │   ├── match.cpp
+│   │   ├── match.h
+│   │   ├── order_book.h
+│   │   ├── recv_helper.h
+│   │   ├── send_from_engine.h
+│   │   ├── send_to_engine.cpp
+│   │   ├── spsc_ring.h
+│   │   ├── xdp_kernal.c
+│   │   └── xdp_recv.cpp
+│   └── /cpp_helpers
+│       └── protocols.hpp       # Holds Packet Struct
+│── /utils                      # Scripts to run
+│   ├── plot.py
+│   ├── run_basic_engine.sh
+│   ├── run_engine.sh
+│   └── run_server.sh
+```
 
 
-perf stat not supported on linux
+## Architecture
+- UDP sender -> AF_XDP socket -> SPSC ring -> match loop -> -> SPSC ring -> trade sender.
+- Matching engine: price levels stored in vectors with a bitmap to jump to best price in constant time (cheaper than std::hash).
 
-perf record was bad for system-wide and user-space-only bc waiting dominated.
 
+## Notes on XDP Mode and the latencies
 
-q tracking
+This runs in XDP copy (SKB) mode on the VM because the virtual NIC does not support native/zero-copy XDP. The code still uses AF_XDP and the same control flow, but packets are copied by the kernel in this environment (sadly).
 
-## Results:
+Also because this is running on a VM on a Mac the latencies are much higher than FPGA linux boss systems so don't pay too much attention to the microsecond counts as the % change of speedup is really whats important here.
 
+## How to Run (VM)
+From repo root:
+```
+./utils/run_engine.sh
+```
+In another terminal (sender):
+```
+./utils/run_server.sh
+```
+Plot latencies:
+```
+./utils/plot.py
+```
+
+### Note:
+
+I hardcoded the IPs and Iface so you probably need to change this stuff around on your machine.
+
+## Results (Throughput Statistics):
 
 V1 stats:
+
+This was my inital engine which was already kinda pretty optimized as I had watched a few videos on this and didn't do that bad of a job.
 
 | sec  | orders_per_sec | trades_per_sec | total_orders | total_trades |
 |-----:|---------------:|---------------:|------------:|-------------:|
@@ -38,16 +114,12 @@ V1 stats:
 | 0.035 | 0.000 | 0.000 | 2000 | 1537 |
 | 0.037 | 0.000 | 0.000 | 2000 | 1537 |
 | 0.040 | 0.000 | 0.000 | 2000 | 1537 |
-| 0.043 | 0.000 | 0.000 | 2000 | 1537 |
-| 0.045 | 0.000 | 0.000 | 2000 | 1537 |
-| 0.048 | 0.000 | 0.000 | 2000 | 1537 |
-| 0.050 | 0.000 | 0.000 | 2000 | 1537 |
 
 
 
 V2:
 
-The zeros in between massive trades/sec tell us this engine isn't dealing with compute-bound slowdowns i.e. are matching logic is pretty solid. So to improve upon V1 we will try and smooth out the input to reduce idle gaps. We will make our rings/buffers bigger to absorb burts of orders and will use a hybrid backoff so that idle spin is reduced. 
+The zeros above in between massive trades/sec tell us this engine isn't dealing with compute-bound slowdowns i.e. are matching logic is pretty solid. So to improve upon V1 we will try and smooth out the input to reduce idle gaps. We will make our rings/buffers bigger to absorb burts of orders and will use a hybrid backoff so that idle spin is reduced. 
 
 
 | sec  | orders_per_sec | trades_per_sec | total_orders | total_trades |
@@ -68,15 +140,11 @@ The zeros in between massive trades/sec tell us this engine isn't dealing with c
 | 0.035 | 0.000 | 0.000 | 2000 | 1539 |
 | 0.037 | 0.000 | 0.000 | 2000 | 1539 |
 | 0.040 | 0.000 | 0.000 | 2000 | 1539 |
-| 0.043 | 0.000 | 0.000 | 2000 | 1539 |
-| 0.045 | 0.000 | 0.000 | 2000 | 1539 |
-| 0.048 | 0.000 | 0.000 | 2000 | 1539 |
-| 0.050 | 0.000 | 0.000 | 2000 | 1539 |
 
 
 V3:
 
-Now that we arent dealing with the 0s lets try a different container, std::vector.
+Now that we arent dealing with the 0s lets try and increase throughput and decrease latency by using another data structure than the pointer based std::map. I 
 
 
 | sec  | orders_per_sec | trades_per_sec | total_orders | total_trades |
@@ -97,10 +165,7 @@ Now that we arent dealing with the 0s lets try a different container, std::vecto
 | 0.035 | 0.000 | 0.000 | 2000 | 1537 |
 | 0.037 | 0.000 | 0.000 | 2000 | 1537 |
 | 0.040 | 0.000 | 0.000 | 2000 | 1537 |
-| 0.043 | 0.000 | 0.000 | 2000 | 1537 |
-| 0.045 | 0.000 | 0.000 | 2000 | 1537 |
-| 0.048 | 0.000 | 0.000 | 2000 | 1537 |
-| 0.050 | 0.000 | 0.000 | 2000 | 1537 |
+
 
 V4:
 
@@ -129,11 +194,82 @@ Also replaced the order_id -> info lookup from unordered_map to a flat array for
 | 0.035 | 76000.000 | 64000.000 | 2000 | 1591 |
 | 0.037 | 0.000 | 0.000 | 2000 | 1591 |
 | 0.040 | 0.000 | 0.000 | 2000 | 1591 |
-| 0.043 | 0.000 | 0.000 | 2000 | 1591 |
-| 0.045 | 0.000 | 0.000 | 2000 | 1591 |
-| 0.048 | 0.000 | 0.000 | 2000 | 1591 |
-| 0.050 | 0.000 | 0.000 | 2000 | 1591 |
+
 
 V5:
 
 Thread pinning and pre-reserve per level vectors in order book
+
+| sec  | orders_per_sec | trades_per_sec | total_orders | total_trades |
+|-----:|---------------:|---------------:|------------:|-------------:|
+| 0.003 | 0.000 | 0.000 | 149 | 113 |
+| 0.005 | 0.000 | 0.000 | 149 | 113 |
+| 0.007 | 105600.000 | 82400.000 | 413 | 319 |
+| 0.010 | 134400.000 | 112800.000 | 749 | 601 |
+| 0.013 | 62800.000 | 47600.000 | 906 | 720 |
+| 0.015 | 46800.000 | 34400.000 | 1023 | 806 |
+| 0.018 | 55200.000 | 45200.000 | 1161 | 919 |
+| 0.020 | 37600.000 | 34800.000 | 1255 | 1006 |
+| 0.022 | 8400.000 | 5200.000 | 1276 | 1019 |
+| 0.025 | 172800.000 | 140400.000 | 1708 | 1370 |
+| 0.028 | 76400.000 | 58400.000 | 1898 | 1516 |
+| 0.030 | 40800.000 | 39600.000 | 2000 | 1615 |
+| 0.033 | 0.000 | 0.000 | 2000 | 1615 |
+| 0.035 | 0.000 | 0.000 | 2000 | 1615 |
+| 0.037 | 0.000 | 0.000 | 2000 | 1615 |
+| 0.040 | 0.000 | 0.000 | 2000 | 1615 |
+
+## Results (Latency Histograms)
+Baseline (basic engine):
+![Basic engine](plots/basic_engine.png)
+
+Engine V1:
+![Engine V1](plots/engine_v1.png)
+
+Engine V2:
+![Engine V2](plots/engine_v2.png)
+
+Engine V3:
+![Engine V3](plots/engine_v3.png)
+
+Engine V4:
+![Engine V4](plots/engine_v4.png)
+
+Engine V5:
+![Engine V5](plots/engine_v5.png)
+
+Latest latency histogram:
+![Latency histogram](plots/latency_hist.png)
+
+## Optimization Summary
+- V1: baseline AF_XDP path with ring buffers and match loop.
+- V2: larger rings plus hybrid spin/backoff to reduce idle overhead.
+- V3: vector-based price levels to reduce pointer chasing.
+- V4: bitmap + bit-scan to jump to best price and flat array for order_id lookup.
+- V5: thread pinning to reduce cross-core contention.
+
+## Files of Interest
+- `src/cpp/xdp_recv.cpp`: AF_XDP ingest, ring wiring, stats collection.
+- `src/cpp/match.cpp`: match loop.
+- `src/cpp/order_book.h`: vector book + bitmap.
+- `src/cpp/send_to_engine.cpp`: traffic generator + latency capture.
+- `utils/plot.py`: latency plots.
+
+## File Overview
+- `Makefile`: build targets for engine and tools.
+- `src/cpp/xdp_kernal.c`: XDP program (redirect to AF_XDP socket).
+- `src/cpp/xdp_recv.cpp`: engine entrypoint, AF_XDP setup, stats, thread pinning.
+- `src/cpp/match.cpp`: matching logic.
+- `src/cpp/order_book.h`: order book data structures and best‑price logic.
+- `src/cpp/book_types.h`: price range and book type aliases.
+- `src/cpp/send_to_engine.cpp`: UDP order generator + latency capture.
+- `src/cpp/send_from_engine.h`: trade sender thread.
+- `src/cpp/spsc_ring.h`: single‑producer/single‑consumer ring.
+- `src/cpp_helpers/protocols.hpp`: shared wire structs and enums.
+- `utils/run_engine.sh`: build and run engine.
+- `utils/run_server.sh`: build and run sender.
+- `utils/run_basic_engine.sh`: build and run basic engine.
+- `utils/plot.py`: plots `data/latencies.csv` into `plots/`.
+- `data/latencies.csv`: latency samples (ns).
+- `data/stats.csv`: orders/sec and trades/sec samples.
+- `plots/*.png`: saved graphs and histograms.
