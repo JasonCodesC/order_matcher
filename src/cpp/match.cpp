@@ -4,10 +4,16 @@
 void match_loop(OrderMsgRing& ring, TradeMsgRing& trades, std::atomic<bool>& running,
                 std::atomic<uint64_t>& trades_total) {
     Books book;
+    SpinWait ring_wait;
+    SpinWait trade_wait;
 
     while (running.load(std::memory_order_acquire)) {
         OrderMsg* slot = nullptr;
-        if (!ring.try_acquire_consumer_slot(slot)) { continue; }
+        while (!ring.try_acquire_consumer_slot(slot)) {
+            if (!running.load(std::memory_order_acquire)) { return; }
+            ring_wait.pause();
+        }
+        ring_wait.reset();
         OrderMsg& msg = *slot;
         const bool taker_is_buy = (msg.side == Order_Type::Buy);
 
@@ -54,7 +60,11 @@ void match_loop(OrderMsgRing& ring, TradeMsgRing& trades, std::atomic<bool>& run
 
             // emit trade
             TradeMsg* tslot = nullptr;
-            while (!trades.try_acquire_producer_slot(tslot)) {}
+            while (!trades.try_acquire_producer_slot(tslot)) {
+                if (!running.load(std::memory_order_acquire)) { return; }
+                trade_wait.pause();
+            }
+            trade_wait.reset();
             tslot->bid_order_id = bid_o->order_id;
             tslot->ask_order_id = ask_o->order_id;
             tslot->price_tick = trade_px;

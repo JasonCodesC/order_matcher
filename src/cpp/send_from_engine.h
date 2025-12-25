@@ -35,9 +35,15 @@ inline std::thread start_trade_sender(TradeMsgRing& trades, const char* dst_ip, 
     }
 
     return std::thread([fd, addr, &trades, &running]() mutable {
+        SpinWait wait;
         while (running.load(std::memory_order_acquire)) {
             TradeMsg* slot = nullptr;
-            if (!trades.try_acquire_consumer_slot(slot)) { continue; }
+            while (!trades.try_acquire_consumer_slot(slot)) {
+                if (!running.load(std::memory_order_acquire)) { break; }
+                wait.pause();
+            }
+            if (!running.load(std::memory_order_acquire)) { break; }
+            wait.reset();
             TradeMsg& t = *slot;
 
             TradeWire wire{

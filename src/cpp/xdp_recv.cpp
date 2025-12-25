@@ -31,7 +31,7 @@
 
 
 static constexpr uint32_t FRAME_SIZE = 2048;    // size of one packet buffer
-static constexpr uint32_t NUM_FRAMES = 32768;    // how many packet buffers in UMEM
+static constexpr uint32_t NUM_FRAMES = 65536;    // how many packet buffers in UMEM
 static constexpr uint32_t BATCH = 64;           // process packets in chunks
 static constexpr int UDP_PORT = 9000;                                
 static constexpr const char* IFACE_NAME = "ens160";
@@ -166,8 +166,8 @@ int main() {
     std::memset(&tx, 0, sizeof(tx));
 
     xsk_socket_config xcfg{};
-    xcfg.rx_size = 8192;
-    xcfg.tx_size = 4096; // some kernels reject tx_size=0
+    xcfg.rx_size = 16384;
+    xcfg.tx_size = 8192; // some kernels reject tx_size=0
 #ifdef XSK_LIBBPF_FLAGS__INHIBIT_PROG_LOAD
     xcfg.libbpf_flags = XSK_LIBBPF_FLAGS__INHIBIT_PROG_LOAD;
 #else
@@ -297,7 +297,13 @@ int main() {
             if (dd.is_duplicate(p.seq_num)) {continue;}
 
             OrderMsg* slot = nullptr;
-            while (!ring.try_acquire_producer_slot(slot)) {}
+            SpinWait wait;
+            while (!ring.try_acquire_producer_slot(slot)) {
+                if (!g_running.load(std::memory_order_acquire)) { break; }
+                wait.pause();
+            }
+            if (!g_running.load(std::memory_order_acquire)) { break; }
+            wait.reset();
             if (!stats_started.load(std::memory_order_relaxed)) {
                 if (!stats_started.exchange(true, std::memory_order_acq_rel)) {
                     stats_start_ns.store(steady_ns(), std::memory_order_release);
