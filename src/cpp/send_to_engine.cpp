@@ -38,7 +38,7 @@ static std::mutex g_mu;
 
 static void send_loop() {
     std::mt19937 engine(static_cast<unsigned int>(std::time(nullptr)));
-    //std::uniform_int_distribution<int> sleep_ms(1, 2);
+    // randomized data
     std::uniform_int_distribution<int> qty_dist(1, 100);
     std::uniform_int_distribution<uint32_t> price_delta(-10, 10);
     std::uniform_int_distribution<int> side_dist(0, 1);
@@ -48,16 +48,14 @@ static void send_loop() {
 
     int fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (fd == -1) {
-        std::perror("socket");
-        std::exit(1);
+        std::perror("socket"); std::exit(1);
     }
 
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_port = htons(DST_PORT);
     if (inet_pton(AF_INET, DST_IP, &addr.sin_addr) != 1) {
-        std::cerr << "bad DST_IP\n";
-        std::exit(1);
+        std::cerr << "bad DST_IP\n"; std::exit(1);
     }
 
     uint32_t seq = 1;
@@ -85,7 +83,7 @@ static void send_loop() {
 
         ++seq; ++counter;
         ++since_pause;
-        if (since_pause >= pause_after) {
+        if (since_pause >= pause_after) { // randomized pauses so everything isnt sent at once
             std::this_thread::sleep_for(std::chrono::microseconds(100));
             since_pause = 0;
             pause_after = pause_mult(engine) * 200;
@@ -110,7 +108,7 @@ static void recv_trades_loop() {
         std::exit(1);
     }
 
-    uint64_t total_notional = 0;
+   // uint64_t total_notional = 0;
     auto flush_lat = []() {
         std::ofstream out(LATENCY_FILE, std::ios::app);
         if (!out) { return; }
@@ -154,9 +152,9 @@ static void recv_trades_loop() {
         const uint32_t* w = reinterpret_cast<const uint32_t*>(buf);
         uint32_t bid = ntohl(w[0]);
         uint32_t ask = ntohl(w[1]);
-        uint32_t px  = ntohl(w[2]);
-        uint32_t qty = ntohl(w[3]);
-        total_notional += static_cast<uint64_t>(px) * qty;
+       // uint32_t px  = ntohl(w[2]);
+     //   uint32_t qty = ntohl(w[3]);
+       // total_notional += static_cast<uint64_t>(px) * qty;
         // std::cout << "TRADE bid=" << bid << " ask=" << ask << " px=" << px << " qty=" << qty << "\n";
         // std::cout << "TOTAL_NOTIONAL=" << total_notional << "\n";
 
@@ -170,10 +168,12 @@ static void recv_trades_loop() {
                 sent_ns = (itb->second < ita->second) ? itb->second : ita->second;
                 g_send_ts.erase(itb);
                 g_send_ts.erase(ita);
-            } else if (itb != g_send_ts.end()) {
+            } 
+            else if (itb != g_send_ts.end()) {
                 sent_ns = itb->second;
                 g_send_ts.erase(itb);
-            } else if (ita != g_send_ts.end()) {
+            } 
+            else if (ita != g_send_ts.end()) {
                 sent_ns = ita->second;
                 g_send_ts.erase(ita);
             }

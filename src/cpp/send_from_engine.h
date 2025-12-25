@@ -19,7 +19,9 @@ struct TradeWire {
     uint32_t qty;
 };
 
-inline std::thread start_trade_sender(TradeMsgRing& trades, const char* dst_ip, uint16_t dst_port, std::atomic<bool>& running) {
+inline std::thread start_trade_sender(TradeMsgRing& trades, const char* dst_ip, 
+        uint16_t dst_port, std::atomic<bool>& running) {
+
     int fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (fd < 0) {
         std::perror("trade sender socket");
@@ -34,6 +36,7 @@ inline std::thread start_trade_sender(TradeMsgRing& trades, const char* dst_ip, 
         std::exit(1);
     }
 
+    // return a thread that reads from the meatched ring and sends out trades
     return std::thread([fd, addr, &trades, &running]() mutable {
         SpinWait wait;
         while (running.load(std::memory_order_acquire)) {

@@ -58,7 +58,7 @@ static inline uint64_t steady_ns() {
 
 static int attach_xdp(int ifindex, int prog_fd, uint32_t flags) {
 #if defined(LIBBPF_MAJOR_VERSION) && (LIBBPF_MAJOR_VERSION >= 1)
-    return bpf_xdp_attach(ifindex, prog_fd, flags, nullptr);
+    return bpf_xdp_attach(ifindex, prog_fd, flags, nullptr); //active on VM
 #else
     return bpf_set_link_xdp_fd(ifindex, prog_fd, flags);
 #endif
@@ -66,16 +66,10 @@ static int attach_xdp(int ifindex, int prog_fd, uint32_t flags) {
 
 static int detach_xdp(int ifindex, uint32_t flags) {
 #if defined(LIBBPF_MAJOR_VERSION) && (LIBBPF_MAJOR_VERSION >= 1)
-    return bpf_xdp_detach(ifindex, flags, nullptr);
+    return bpf_xdp_detach(ifindex, flags, nullptr);  //active on VM
 #else
     return bpf_set_link_xdp_fd(ifindex, -1, flags);
 #endif
-}
-
-static void detach_xdp() {
-    if (g_ifindex >= 0) {
-        detach_xdp(g_ifindex, kXdpFlags);
-    }
 }
 
 static void handle_sig(int) {
@@ -87,7 +81,7 @@ static bool pin_thread_to_cpu(pthread_t tid, int cpu, const char* label) {
     long cpu_count = sysconf(_SC_NPROCESSORS_ONLN);
     if (cpu < 0 || cpu_count <= 0 || cpu >= cpu_count) {
         std::cerr << "pin " << label << " skipped: cpu " << cpu
-                  << " not in [0," << (cpu_count - 1) << "]\n";
+            << " not in [0," << (cpu_count - 1) << "]\n";
         return false;
     }
     cpu_set_t set;
@@ -96,7 +90,7 @@ static bool pin_thread_to_cpu(pthread_t tid, int cpu, const char* label) {
     int rc = pthread_setaffinity_np(tid, sizeof(set), &set);
     if (rc != 0) {
         std::cerr << "pin " << label << " to cpu " << cpu
-                  << " failed: " << std::strerror(rc) << "\n";
+            << " failed: " << std::strerror(rc) << "\n";
         return false;
     }
     return true;
@@ -144,7 +138,7 @@ int main() {
     ucfg.flags = 0;
 
     // register with kernal
-    if (xsk_umem__create(&umem, umem_area, (size_t)FRAME_SIZE * NUM_FRAMES, &fq, &cq, &ucfg) != 0) {                               // create rings too
+    if (xsk_umem__create(&umem, umem_area, (size_t)FRAME_SIZE * NUM_FRAMES, &fq, &cq, &ucfg) != 0) {  // create rings too
         die("xsk_umem__create");  // die
     }
 
@@ -184,7 +178,11 @@ int main() {
         die("if_nametoindex");
     }
     g_ifindex = ifindex;
-    std::atexit(detach_xdp);
+    std::atexit([]() { // detach xdp at exit
+        if (g_ifindex >= 0) {
+            detach_xdp(g_ifindex, kXdpFlags);
+        }
+    });
 
     if (attach_xdp(ifindex, prog_fd, kXdpFlags) < 0) {  // attach XDP program to that interface
         die("attach_xdp");
@@ -199,9 +197,9 @@ int main() {
 
     xsk_socket_config xcfg{};
     xcfg.rx_size = 16384;
-    xcfg.tx_size = 8192; // some kernels reject tx_size=0
+    xcfg.tx_size = 8192;
 #ifdef XSK_LIBBPF_FLAGS__INHIBIT_PROG_LOAD
-    xcfg.libbpf_flags = XSK_LIBBPF_FLAGS__INHIBIT_PROG_LOAD;
+    xcfg.libbpf_flags = XSK_LIBBPF_FLAGS__INHIBIT_PROG_LOAD; // Dont auto attach xdp when creating socket
 #else
     xcfg.libbpf_flags = 0;
 #endif
@@ -212,8 +210,7 @@ int main() {
     int err = xsk_socket__create(&xsk, ifname, queue_id, umem, &rx, &tx, &xcfg);
     if (err != 0) {
         std::cerr << "xsk_socket__create failed: " << std::strerror(-err)
-                  << " (" << err << ")\n";
-        std::exit(1);
+            << " (" << err << ")\n"; std::exit(1);
     }
 
     int xsk_fd = xsk_socket__fd(xsk);  // fd for polling
@@ -232,10 +229,7 @@ int main() {
     }
 
     std::cout << "Engine listening on " << ifname  << " queue " << queue_id 
-        << " for UDP dst port " << UDP_PORT << "\n";
-
-    
-    
+    << " for UDP dst port " << UDP_PORT << "\n";
 
     DedupeWindow dd;
     OrderMsgRing ring;
@@ -253,6 +247,7 @@ int main() {
     pin_thread_to_cpu(matcher.native_handle(), 2, "matcher");
     std::thread trade_sender = start_trade_sender(trade_ring, dst_ip, dst_port, g_running);
     pin_thread_to_cpu(trade_sender.native_handle(), 3, "trade_sender");
+    // stats thread is just for the thruput tables
     std::thread stats_thread([&orders_total, &trades_total, &stats_started, &stats_start_ns]() {
         std::filesystem::create_directories("data");
         std::ofstream out("data/stats.csv", std::ios::trunc);
@@ -261,10 +256,8 @@ int main() {
             return;
         }
         out << "sec,orders_per_sec,trades_per_sec,total_orders,total_trades\n";
-        uint64_t last_orders = 0;
-        uint64_t last_trades = 0;
-        uint64_t last_ts = 0;
-        uint64_t next_sample = 0;
+        uint64_t last_orders = 0; uint64_t last_trades = 0;
+        uint64_t last_ts = 0; uint64_t next_sample = 0;
         const uint64_t start_offset = 2'500'000ULL;
         const uint64_t step = 2'500'000ULL;
         const uint64_t end_offset = 50'000'000ULL;
@@ -323,36 +316,37 @@ int main() {
             continue; // nothing ready 
         } 
 
-        for (uint32_t i{}; i < rcvd; i++) {
-            const xdp_desc* d = xsk_ring_cons__rx_desc(&rx, rx_idx + i);
-            uint8_t* frame = (uint8_t*)umem_area + d->addr;
+        for (uint32_t i{}; i < rcvd; i++) { // loop over packets recieved from rx ring
+            const xdp_desc* d = xsk_ring_cons__rx_desc(&rx, rx_idx + i); // get descripter fop packet i
+            uint8_t* frame = (uint8_t*)umem_area + d->addr; // gets buffer addr
 
             Packet p;
-            if (!parse_packet(frame, d->len, p, 9000)) {
+            if (!parse_packet(frame, d->len, p, 9000)) { // parse
                 continue;
             }
             if (dd.is_duplicate(p.seq_num)) {continue;}
 
             OrderMsg* slot = nullptr;
             SpinWait wait;
-            while (!ring.try_acquire_producer_slot(slot)) {
+            while (!ring.try_acquire_producer_slot(slot)) { // spin until slot avalible
                 if (!g_running.load(std::memory_order_acquire)) { break; }
                 wait.pause();
             }
             if (!g_running.load(std::memory_order_acquire)) { break; }
             wait.reset();
-            if (!stats_started.load(std::memory_order_relaxed)) {
+            if (!stats_started.load(std::memory_order_relaxed)) { // start stats on first packet
                 if (!stats_started.exchange(true, std::memory_order_acq_rel)) {
                     stats_start_ns.store(steady_ns(), std::memory_order_release);
                 }
             }
+            // copy stuff
             slot->seq_num = p.seq_num;
             slot->order_id = p.order_id;
             slot->price_tick = p.price_tick;
             slot->qty = p.qty;
             slot->msg_type = p.msg_type;
             slot->side = p.side;
-            ring.commit_producer_slot();
+            ring.commit_producer_slot(); // advance write ptr so consumer can see
             orders_total.fetch_add(1, std::memory_order_relaxed);
         }
 

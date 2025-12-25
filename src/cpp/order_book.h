@@ -123,7 +123,7 @@ class VectorOrderBook {
         bool used{false};
     };
     std::vector<IndexSlot> index_{MaxOrderId + 1};
-    std::array<uint64_t, kNumWords> level_bits_{};
+    std::array<uint64_t, kNumWords> level_bits_{}; // scan bits rather than a full arr
     bool has_best_{false};
     uint32_t best_price_{0};
 
@@ -145,12 +145,12 @@ private:
 
     inline void set_level_bit(uint32_t price) {
         const uint32_t i = idx(price);
-        level_bits_[i / kWordBits] |= (1ULL << (i % kWordBits));
+        level_bits_[i / kWordBits] |= (1ULL << (i % kWordBits)); // sets bit to 1
     }
 
     inline void clear_level_bit(uint32_t price) {
         const uint32_t i = idx(price);
-        level_bits_[i / kWordBits] &= ~(1ULL << (i % kWordBits));
+        level_bits_[i / kWordBits] &= ~(1ULL << (i % kWordBits)); // clears bit
     }
 
     inline void update_best_on_add(uint32_t price) {
@@ -159,10 +159,15 @@ private:
             has_best_ = true;
             return;
         }
-        if constexpr (Side == Order_Type::Buy) {
-            if (price > best_price_) { best_price_ = price; }
-        } else {
-            if (price < best_price_) { best_price_ = price; }
+        if constexpr (Side == Order_Type::Buy) { // bc side is templeted this helps the hot path
+            if (price > best_price_) { 
+                best_price_ = price; 
+            }
+        } 
+        else {
+            if (price < best_price_) { 
+                best_price_ = price; 
+            }
         }
     }
 
@@ -175,12 +180,12 @@ private:
             uint64_t mask = (bit == 63) ? ~0ULL : ((1ULL << (bit + 1)) - 1);
             uint64_t w = level_bits_[(size_t)word] & mask;
             if (w != 0) {
-                uint32_t pos = 63 - (uint32_t)__builtin_clzll(w);
+                uint32_t pos = 63 - (uint32_t)__builtin_clzll(w); // find highest set bit
                 best_price_ = MinPrice + (uint32_t)word * kWordBits + pos;
                 has_best_ = true;
                 return true;
             }
-            for (--word; word >= 0; --word) {
+            for (--word; word >= 0; --word) { // find next non empty price level
                 w = level_bits_[(size_t)word];
                 if (w != 0) {
                     uint32_t pos = 63 - (uint32_t)__builtin_clzll(w);
@@ -189,7 +194,8 @@ private:
                     return true;
                 }
             }
-        } else {
+        } 
+        else {
             uint32_t s = (start < MinPrice) ? MinPrice : start;
             uint32_t s_idx = idx(s);
             uint32_t word = s_idx / kWordBits;
@@ -197,12 +203,12 @@ private:
             uint64_t mask = ~0ULL << bit;
             uint64_t w = level_bits_[word] & mask;
             if (w != 0) {
-                uint32_t pos = (uint32_t)__builtin_ctzll(w);
+                uint32_t pos = (uint32_t)__builtin_ctzll(w); // find highest set bit
                 best_price_ = MinPrice + word * kWordBits + pos;
                 has_best_ = true;
                 return true;
             }
-            for (++word; word < kNumWords; ++word) {
+            for (++word; word < kNumWords; ++word) { // find next non empty price level
                 w = level_bits_[word];
                 if (w != 0) {
                     uint32_t pos = (uint32_t)__builtin_ctzll(w);
@@ -236,7 +242,8 @@ private:
                 find_best_from(price_tick - 1);
                 return;
             }
-        } else {
+        } 
+        else {
             if (price_tick < MaxPrice) {
                 find_best_from(price_tick + 1);
                 return;
@@ -248,7 +255,9 @@ private:
     public:
 
     inline void on_new_limit(uint32_t order_id, uint32_t price_tick, uint32_t qty) {
-        if (!valid_order_id(order_id) || !in_range(price_tick)) { return; }
+        if (!valid_order_id(order_id) || !in_range(price_tick)) { 
+            return; 
+        }
         add_to_book(order_id, price_tick, qty);
     }
 
@@ -258,7 +267,10 @@ private:
         if (!slot.used) { return; }
 
         const uint32_t price = slot.data.price_tick;
-        if (!in_range(price)) { slot.used = false; return; }
+        if (!in_range(price)) { 
+            slot.used = false; 
+            return; 
+        }
         auto& level = levels_[idx(price)].orders;
         const uint32_t pos = slot.data.pos_in_level;
 
@@ -283,7 +295,9 @@ private:
 
         const uint32_t old_price = slot.data.price_tick;
         if (old_price == new_price_tick) {
-            if (!in_range(old_price)) { return; }
+            if (!in_range(old_price)) { 
+                return; 
+            }
             auto& level = levels_[idx(old_price)].orders;
             level[slot.data.pos_in_level].qty = new_qty;
             return;
@@ -310,7 +324,9 @@ private:
         if (!best_price(price_tick)) { return nullptr; }
         auto& level = levels_[idx(price_tick)].orders;
         if (level.empty()) {
-            if (!find_best_from(price_tick)) { return nullptr; }
+            if (!find_best_from(price_tick)) { 
+                return nullptr; 
+            }
         }
         price_tick = best_price_;
         return &levels_[idx(price_tick)].orders.back();
@@ -319,7 +335,9 @@ private:
     inline void remove_best(uint32_t price_tick) {
         if (!in_range(price_tick)) { return; }
         auto& level = levels_[idx(price_tick)].orders;
-        if (level.empty()) { return; }
+        if (level.empty()) { 
+            return; 
+        }
         const uint32_t oid = level.back().order_id;
         level.pop_back();
         if (valid_order_id(oid)) {

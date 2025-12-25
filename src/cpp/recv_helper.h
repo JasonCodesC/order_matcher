@@ -16,7 +16,6 @@ struct DedupeWindow {
     std::array<uint8_t, W> seen{}; // 0/1 flags
     uint32_t base = 0; // oldest seq tracked
 
-    // Returns true if seq is a duplicate
     inline bool is_duplicate(uint32_t seq) {
         if (seq < base) {
             return true;
@@ -31,15 +30,17 @@ struct DedupeWindow {
             base = new_base;
         }
         uint32_t idx = seq & MASK;
-        if (seen[idx]) return true;
+        if (seen[idx]) {
+            return true;
+        }
         seen[idx] = 1;
         return false;
     }
 };
 
 
-static inline bool parse_packet(const uint8_t* frame, uint32_t frame_len, Packet& out, uint16_t udp_port) {
-    (void)udp_port;
+static inline bool parse_packet(const uint8_t* frame, uint32_t frame_len, 
+        Packet& out, uint16_t udp_port) {
 
     const uint32_t off = sizeof(ethhdr) + sizeof(iphdr) + sizeof(udphdr);
 

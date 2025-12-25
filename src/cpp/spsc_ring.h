@@ -43,7 +43,9 @@ class SpscRing {
         const uint32_t head = read_ptr.load(std::memory_order_relaxed);
         if (head - cached_write_ptr == N) {
             cached_write_ptr = write_ptr.load(std::memory_order_acquire);
-            if (head - cached_write_ptr == N) {return false;}
+            if (head - cached_write_ptr == N) {
+                return false;
+            }
         }
         slot = &buf_[head & (N - 1)];
         return true;
@@ -58,7 +60,9 @@ class SpscRing {
         const uint32_t tail = write_ptr.load(std::memory_order_relaxed);
         if (cached_read_ptr == tail) {
             cached_read_ptr = read_ptr.load(std::memory_order_acquire);
-            if (cached_read_ptr == tail) {return false;}
+            if (cached_read_ptr == tail) {
+                return false;
+            }
         }
         slot = &buf_[tail & (N - 1)];
         return true;
