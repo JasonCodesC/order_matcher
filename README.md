@@ -37,4 +37,4 @@ V1 stats:
 
 V2:
 
-The zeros in between massive trades/sec tell us this engine isn't dealing with compute-bound slowdowns i.e. are matching logic is pretty solid. So to improve upon V1 we will try and smooth out the input to reduce idle gaps. We will make our rings/buffers bigger to absorb burts of orders and will use a hybrid backoff so that idle spin is reduced. 
+The zeros in between massive trades/sec tell us this engine isn't dealing with compute-bound slowdowns i.e. are matching logic is pretty solid. So to improve upon V1 we will try and smooth out the input to reduce idle gaps. We will make our rings/buffers bigger to absorb burts of orders and will use a hybrid backoff so that idle spin is reduced. ,
