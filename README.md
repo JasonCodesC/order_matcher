@@ -69,3 +69,8 @@ The zeros in between massive trades/sec tell us this engine isn't dealing with c
 | 0.045 | 0.000 | 0.000 | 2000 | 1539 |
 | 0.048 | 0.000 | 0.000 | 2000 | 1539 |
 | 0.050 | 0.000 | 0.000 | 2000 | 1539 |
+
+
+V3:
+
+Now that we arent dealing with the 0s lets try a different container, std::vector.
