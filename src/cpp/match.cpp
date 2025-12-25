@@ -1,7 +1,8 @@
 #include "match.h"
 #include "book_types.h"
 
-void match_loop(OrderMsgRing& ring, TradeMsgRing& trades, std::atomic<bool>& running) {
+void match_loop(OrderMsgRing& ring, TradeMsgRing& trades, std::atomic<bool>& running,
+                std::atomic<uint64_t>& trades_total) {
     Books book;
 
     while (running.load(std::memory_order_acquire)) {
@@ -59,6 +60,7 @@ void match_loop(OrderMsgRing& ring, TradeMsgRing& trades, std::atomic<bool>& run
             tslot->price_tick = trade_px;
             tslot->qty = trade_qty;
             trades.commit_producer_slot();
+            trades_total.fetch_add(1, std::memory_order_relaxed);
 
             // apply fills
             bid_o->qty -= trade_qty;

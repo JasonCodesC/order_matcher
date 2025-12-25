@@ -10,9 +10,13 @@
 #include <unistd.h>
 #include <thread>
 #include <atomic>
+#include <chrono>
 #include <csignal>
 #include <poll.h>
 #include <sys/mman.h>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
 #include <net/if.h>
 #include <linux/if_link.h>
 #include <bpf/libbpf.h>
@@ -44,6 +48,11 @@ static int g_ifindex = -1;
 static std::atomic<bool> g_running(true);
 static constexpr uint32_t kXdpFlags = XDP_FLAGS_SKB_MODE;
 static constexpr uint32_t kBindFlags = XDP_COPY;
+
+static inline uint64_t steady_ns() {
+    using namespace std::chrono;
+    return duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
+}
 
 static int attach_xdp(int ifindex, int prog_fd, uint32_t flags) {
 #if defined(LIBBPF_MAJOR_VERSION) && (LIBBPF_MAJOR_VERSION >= 1)
@@ -199,8 +208,56 @@ int main() {
     DedupeWindow dd;
     OrderMsgRing ring;
     TradeMsgRing trade_ring;
-    std::thread matcher([&ring, &trade_ring]() { match_loop(ring, trade_ring, g_running); });
+    std::atomic<uint64_t> orders_total{0};
+    std::atomic<uint64_t> trades_total{0};
+    std::atomic<bool> stats_started{false};
+    std::atomic<uint64_t> stats_start_ns{0};
+
+    std::thread matcher([&ring, &trade_ring, &trades_total]() {
+        match_loop(ring, trade_ring, g_running, trades_total);
+    });
     std::thread trade_sender = start_trade_sender(trade_ring, dst_ip, dst_port, g_running);
+    std::thread stats_thread([&orders_total, &trades_total, &stats_started, &stats_start_ns]() {
+        std::filesystem::create_directories("data");
+        std::ofstream out("data/stats.csv", std::ios::trunc);
+        if (!out) {
+            std::perror("stats.csv");
+            return;
+        }
+        out << "sec,orders_per_sec,trades_per_sec,total_orders,total_trades\n";
+        uint64_t last_orders = 0;
+        uint64_t last_trades = 0;
+        uint64_t last_ts = 0;
+        while (g_running.load(std::memory_order_acquire)) {
+            if (!stats_started.load(std::memory_order_acquire)) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                continue;
+            }
+            uint64_t now = steady_ns();
+            if (last_ts == 0) {
+                last_ts = now;
+                last_orders = orders_total.load(std::memory_order_relaxed);
+                last_trades = trades_total.load(std::memory_order_relaxed);
+                continue;
+            }
+            uint64_t elapsed = now - last_ts;
+            if (elapsed < 1'000'000'000ULL) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                continue;
+            }
+            uint64_t orders = orders_total.load(std::memory_order_relaxed);
+            uint64_t trades = trades_total.load(std::memory_order_relaxed);
+            double sec = (now - stats_start_ns.load(std::memory_order_relaxed)) / 1e9;
+            double ops = (orders - last_orders) * 1e9 / (double)elapsed;
+            double tps = (trades - last_trades) * 1e9 / (double)elapsed;
+            out << std::fixed << std::setprecision(3)
+                << sec << "," << ops << "," << tps << "," << orders << "," << trades << "\n";
+            out.flush();
+            last_ts = now;
+            last_orders = orders;
+            last_trades = trades;
+        }
+    });
     // loop: poll Recv ring, handle packets, then recycle buffers
     while (g_running.load(std::memory_order_acquire)) {
         pollfd pfd{};
@@ -232,6 +289,11 @@ int main() {
 
             OrderMsg* slot = nullptr;
             while (!ring.try_acquire_producer_slot(slot)) {}
+            if (!stats_started.load(std::memory_order_relaxed)) {
+                if (!stats_started.exchange(true, std::memory_order_acq_rel)) {
+                    stats_start_ns.store(steady_ns(), std::memory_order_release);
+                }
+            }
             slot->seq_num = p.seq_num;
             slot->order_id = p.order_id;
             slot->price_tick = p.price_tick;
@@ -239,6 +301,7 @@ int main() {
             slot->msg_type = p.msg_type;
             slot->side = p.side;
             ring.commit_producer_slot();
+            orders_total.fetch_add(1, std::memory_order_relaxed);
         }
 
         // return the same buffers back into the fill ring for reuse
@@ -258,6 +321,7 @@ int main() {
     }
     matcher.join();
     trade_sender.join();
+    stats_thread.join();
 
     return 0;
 }
