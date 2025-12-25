@@ -15,6 +15,9 @@ perf record was bad for system-wide and user-space-only bc waiting dominated.
 
 q tracking
 
+## Results:
+
+
 V1 stats:
 
 | sec  | orders_per_sec | trades_per_sec | total_orders | total_trades |
@@ -74,3 +77,37 @@ The zeros in between massive trades/sec tell us this engine isn't dealing with c
 V3:
 
 Now that we arent dealing with the 0s lets try a different container, std::vector.
+
+
+| sec  | orders_per_sec | trades_per_sec | total_orders | total_trades |
+|-----:|---------------:|---------------:|------------:|-------------:|
+| 0.003 | 0.000 | 0.000 | 346 | 229 |
+| 0.005 | 6400.000 | 6000.000 | 362 | 244 |
+| 0.007 | 0.000 | 0.000 | 362 | 244 |
+| 0.010 | 19200.000 | 15600.000 | 410 | 283 |
+| 0.013 | 70800.000 | 59200.000 | 587 | 431 |
+| 0.015 | 114800.000 | 96400.000 | 874 | 672 |
+| 0.018 | 93200.000 | 74800.000 | 1107 | 859 |
+| 0.020 | 62400.000 | 51200.000 | 1263 | 987 |
+| 0.022 | 70800.000 | 42400.000 | 1440 | 1093 |
+| 0.025 | 65200.000 | 55600.000 | 1603 | 1232 |
+| 0.028 | 73600.000 | 50800.000 | 1787 | 1359 |
+| 0.030 | 50800.000 | 50000.000 | 1914 | 1484 |
+| 0.033 | 34400.000 | 21200.000 | 2000 | 1537 |
+| 0.035 | 0.000 | 0.000 | 2000 | 1537 |
+| 0.037 | 0.000 | 0.000 | 2000 | 1537 |
+| 0.040 | 0.000 | 0.000 | 2000 | 1537 |
+| 0.043 | 0.000 | 0.000 | 2000 | 1537 |
+| 0.045 | 0.000 | 0.000 | 2000 | 1537 |
+| 0.048 | 0.000 | 0.000 | 2000 | 1537 |
+| 0.050 | 0.000 | 0.000 | 2000 | 1537 |
+
+V4:
+
+Use a bitset to track which price levels are non-empty and jump to the next best level with bit-scan ops.
+
+- ctz (count trailing zeros): finds the index of the lowest set bit.
+- bsr (bit scan reverse): finds the index of the highest set bit.
+
+Also replaced the order_id -> info lookup from unordered_map to a flat array for faster, cache-friendly access.
+

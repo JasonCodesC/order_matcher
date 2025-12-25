@@ -4,6 +4,7 @@
 
 static constexpr uint32_t PRICE_MIN = 5000;
 static constexpr uint32_t PRICE_MAX = 15000;
+static constexpr uint32_t MAX_ORDER_ID = 200000; // update if order ids exceed this
 
 // Prior std::map-based books (kept for easy comparison).
 // #include <functional>
@@ -14,8 +15,8 @@ static constexpr uint32_t PRICE_MAX = 15000;
 // using BidBook = OrderBook<Order_Type::Buy,  BidLevels>;
 // using AskBook = OrderBook<Order_Type::Sell, AskLevels>;
 
-using BidBook = VectorOrderBook<Order_Type::Buy, PRICE_MIN, PRICE_MAX>;
-using AskBook = VectorOrderBook<Order_Type::Sell, PRICE_MIN, PRICE_MAX>;
+using BidBook = VectorOrderBook<Order_Type::Buy, PRICE_MIN, PRICE_MAX, MAX_ORDER_ID>;
+using AskBook = VectorOrderBook<Order_Type::Sell, PRICE_MIN, PRICE_MAX, MAX_ORDER_ID>;
 
 struct Books {
   BidBook bids;
