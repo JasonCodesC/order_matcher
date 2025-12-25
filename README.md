@@ -9,6 +9,7 @@ This project explores a low latency order matching engine where packets are sent
 
 We are sending packets (orders) from a server to the order matching servers via UDP. The structure of a packet follows below.
 
+```
 struct Packet {
   uint32_t seq_num;     // for dupes
   uint32_t order_id;    // unique id 
@@ -17,10 +18,11 @@ struct Packet {
   MsgType msg_type;     // New limit, cancel or modify
   Order_Type side;      // Sell, Buy
 };
+```
 
-We are assuming the same ticker for this engine as it makes testing and profiling much easier to improve upon. To add more tickers all we need is a few hashmaps and some extra logic. 
+We are assuming the same ticker for this engine as it makes testing and profiling much easier to improve upon. To add more tickers all we need is a few hashmaps and some extra logic and seeing that this project was mainly about improving networking, profiling, and modern C++ skills I didn't feel the need to include it. 
 
-The sending server has two threads, one sending out 20000 orders with somewhat random quantities and price ticks. The other thread recives packets and logs the latencies based on the recieving time and the last order sent. 
+The sending server has two threads, one sending out orders with somewhat random quantities and price ticks. The other thread recives packets and logs the latencies based on the recieving time and the last order sent. 
 
 We have two types of order matching servers. One is a basic engine that is single threaded and uses UDP sockets. The other uses AF_XDP along with three different threads and two different SPSC (single producer single consumer) Queues. I tested out two different data structures for efficent matching and tried a few more optimizations like CPU pinning.
 
@@ -38,8 +40,8 @@ This project was inspired by Carl Cook and David Gross. Both gave talks on fast 
 │── /data                       # Holds stats and latencies (temporarily)
 │── /plots                      # Plots of latency distributions
 │── /src
-│   ├── /basic_cpp
-│   │   └── basic_engine.cpp    # Basic Single Threaded Engine with UDP
+│   ├── /basic_cpp              # Basic Single Threaded Engine with UDP
+│   │   └── basic_engine.cpp    
 │   ├── /cpp                    # Advanced Engine
 │   │   ├── book_types.h
 │   │   ├── match.cpp
@@ -51,8 +53,8 @@ This project was inspired by Carl Cook and David Gross. Both gave talks on fast 
 │   │   ├── spsc_ring.h
 │   │   ├── xdp_kernal.c
 │   │   └── xdp_recv.cpp
-│   └── /cpp_helpers
-│       └── protocols.hpp       # Holds Packet Struct
+│   └── /cpp_helpers            # Holds Packet Struct
+│       └── protocols.hpp      
 │── /utils                      # Scripts to run
 │   ├── plot.py
 │   ├── run_basic_engine.sh
@@ -62,8 +64,9 @@ This project was inspired by Carl Cook and David Gross. Both gave talks on fast 
 
 
 ## Architecture
-- UDP sender -> AF_XDP socket -> SPSC ring -> match loop -> -> SPSC ring -> trade sender.
+- UDP sender -> AF_XDP socket -> SPSC ring -> match loop -> SPSC ring -> trade sender.
 - Matching engine: price levels stored in vectors with a bitmap to jump to best price in constant time (cheaper than std::hash).
+- Lock Free: this project is lock free so threads only have to wait for the rings to start filling, each from reads from a ring and preforms its operations on it independently of anything else.
 
 
 ## Notes on XDP Mode and the latencies
@@ -90,9 +93,13 @@ Plot latencies:
 
 I hardcoded the IPs and Iface so you probably need to change this stuff around on your machine.
 
+## How I went about profiling:
+
+Initially I went into this project assuming I could use perf for everything and all would be well but I was very much wrong. Perf stat doesn't work on the VM so I couldn't find any info on how I was preforming on branches or the cache. Perf record was also pretty useless because the vast majority of the time my program was spending in the queues waiting for data so I wasn't even able to figure out which functions were slow. If I had two linux machines than these would have been pretty easy to use but I have to play with the cards I'm dealt so I decided to keep track of throughput statistics and latency (Trade executed time - Last order sent in the trade) and improve from there. 
+
 ## Results (Throughput Statistics):
 
-V1 stats:
+### V1 stats:
 
 This was my inital engine which was already kinda pretty optimized as I had watched a few videos on this and didn't do that bad of a job.
 
@@ -117,7 +124,7 @@ This was my inital engine which was already kinda pretty optimized as I had watc
 
 
 
-V2:
+### V2 stats:
 
 The zeros above in between massive trades/sec tell us this engine isn't dealing with compute-bound slowdowns i.e. are matching logic is pretty solid. So to improve upon V1 we will try and smooth out the input to reduce idle gaps. We will make our rings/buffers bigger to absorb burts of orders and will use a hybrid backoff so that idle spin is reduced. 
 
@@ -142,9 +149,9 @@ The zeros above in between massive trades/sec tell us this engine isn't dealing 
 | 0.040 | 0.000 | 0.000 | 2000 | 1539 |
 
 
-V3:
+### V3 stats:
 
-Now that we arent dealing with the 0s lets try and increase throughput and decrease latency by using another data structure than the pointer based std::map. I 
+Now that we arent dealing with the 0s lets try and increase throughput and decrease latency by using another data structure than the pointer based std::map. I chose std::vector here as it has great cache locality and is dynamic so we can grow it as needed. (I did try to reserve a size but expierenced a slowdown due to reserving too big of a size, so in the future I may try to find a better resizing method).
 
 
 | sec  | orders_per_sec | trades_per_sec | total_orders | total_trades |
@@ -167,14 +174,14 @@ Now that we arent dealing with the 0s lets try and increase throughput and decre
 | 0.040 | 0.000 | 0.000 | 2000 | 1537 |
 
 
-V4:
+### V4 stats:
 
-Use a bitset to track which price levels are non-empty and jump to the next best level with bit-scan ops.
+Here I used a bitset to track which price levels are non-empty and jump to the next best level with bit-scan ops rather than full on scans.
 
 - ctz (count trailing zeros): finds the index of the lowest set bit.
 - bsr (bit scan reverse): finds the index of the highest set bit.
 
-Also replaced the order_id -> info lookup from unordered_map to a flat array for faster, cache-friendly access.
+Also replaced the order_id -> info lookup from unordered_map to a flat array for faster, cache-friendly access without the std::hash overhead.
 
 | sec  | orders_per_sec | trades_per_sec | total_orders | total_trades |
 |-----:|---------------:|---------------:|------------:|-------------:|
@@ -198,7 +205,7 @@ Also replaced the order_id -> info lookup from unordered_map to a flat array for
 
 V5:
 
-Thread pinning and pre-reserve per level vectors in order book
+I used thread pinning here. My VM is allocated 5 cores and so I pinned 1-3 on the XDP, Matcher, and Output respectivly and left core 0 for OS activities and core 4 for the stats I was doing. 
 
 | sec  | orders_per_sec | trades_per_sec | total_orders | total_trades |
 |-----:|---------------:|---------------:|------------:|-------------:|
@@ -220,6 +227,9 @@ Thread pinning and pre-reserve per level vectors in order book
 | 0.040 | 0.000 | 0.000 | 2000 | 1615 |
 
 ## Results (Latency Histograms)
+
+Below are histograms for the respective versions showing the latency distributions. 
+
 Baseline (basic engine):
 ![Basic engine](plots/basic_engine.png)
 
@@ -238,8 +248,6 @@ Engine V4:
 Engine V5:
 ![Engine V5](plots/engine_v5.png)
 
-Latest latency histogram:
-![Latency histogram](plots/latency_hist.png)
 
 ## Optimization Summary
 - V1: baseline AF_XDP path with ring buffers and match loop.
@@ -248,14 +256,8 @@ Latest latency histogram:
 - V4: bitmap + bit-scan to jump to best price and flat array for order_id lookup.
 - V5: thread pinning to reduce cross-core contention.
 
-## Files of Interest
-- `src/cpp/xdp_recv.cpp`: AF_XDP ingest, ring wiring, stats collection.
-- `src/cpp/match.cpp`: match loop.
-- `src/cpp/order_book.h`: vector book + bitmap.
-- `src/cpp/send_to_engine.cpp`: traffic generator + latency capture.
-- `utils/plot.py`: latency plots.
 
-## File Overview
+## Comprehensive File Overview
 - `Makefile`: build targets for engine and tools.
 - `src/cpp/xdp_kernal.c`: XDP program (redirect to AF_XDP socket).
 - `src/cpp/xdp_recv.cpp`: engine entrypoint, AF_XDP setup, stats, thread pinning.
@@ -273,3 +275,8 @@ Latest latency histogram:
 - `data/latencies.csv`: latency samples (ns).
 - `data/stats.csv`: orders/sec and trades/sec samples.
 - `plots/*.png`: saved graphs and histograms.
+
+
+## Final Thoughts:
+
+This was a fun project and I learned a lot. I definitley want to get better at linux programming and perf but I think this was a great start.
