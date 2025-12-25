@@ -229,9 +229,9 @@ int main() {
         uint64_t last_trades = 0;
         uint64_t last_ts = 0;
         uint64_t next_sample = 0;
-        const uint64_t start_offset = 250'000'000ULL;
-        const uint64_t step = 250'000'000ULL;
-        const uint64_t end_offset = 1'250'000'000ULL;
+        const uint64_t start_offset = 2'500'000ULL;
+        const uint64_t step = 2'500'000ULL;
+        const uint64_t end_offset = 30'000'000ULL;
         while (g_running.load(std::memory_order_acquire)) {
             if (!stats_started.load(std::memory_order_acquire)) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -246,7 +246,7 @@ int main() {
                 continue;
             }
             if (now < next_sample) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                std::this_thread::sleep_for(std::chrono::microseconds(200));
                 continue;
             }
             uint64_t orders = orders_total.load(std::memory_order_relaxed);
