@@ -40,9 +40,11 @@ static void send_loop() {
     std::mt19937 engine(static_cast<unsigned int>(std::time(nullptr)));
     //std::uniform_int_distribution<int> sleep_ms(1, 2);
     std::uniform_int_distribution<int> qty_dist(1, 100);
-    std::uniform_int_distribution<uint32_t> price_delta(-500, 500);
+    std::uniform_int_distribution<uint32_t> price_delta(-10, 10);
     std::uniform_int_distribution<int> side_dist(0, 1);
+    std::uniform_int_distribution<int> pause_mult(1, 10);
     const uint32_t base_price = 10000;
+    int pause_after = pause_mult(engine) * 200;
 
     int fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (fd == -1) {
@@ -60,7 +62,8 @@ static void send_loop() {
 
     uint32_t seq = 1;
     int counter = 0;
-    while (counter < 20000) {
+    int since_pause = 0;
+    while (counter < 2000) {
         // randomish orders
         Packet p{};
         p.seq_num = htonl(seq);
@@ -81,6 +84,12 @@ static void send_loop() {
         }
 
         ++seq; ++counter;
+        ++since_pause;
+        if (since_pause >= pause_after) {
+            std::this_thread::sleep_for(std::chrono::microseconds(100));
+            since_pause = 0;
+            pause_after = pause_mult(engine) * 200;
+        }
     //    std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms(engine)));
     }
 }
@@ -148,8 +157,8 @@ static void recv_trades_loop() {
         uint32_t px  = ntohl(w[2]);
         uint32_t qty = ntohl(w[3]);
         total_notional += static_cast<uint64_t>(px) * qty;
-        std::cout << "TRADE bid=" << bid << " ask=" << ask << " px=" << px << " qty=" << qty << "\n";
-        std::cout << "TOTAL_NOTIONAL=" << total_notional << "\n";
+        // std::cout << "TRADE bid=" << bid << " ask=" << ask << " px=" << px << " qty=" << qty << "\n";
+        // std::cout << "TOTAL_NOTIONAL=" << total_notional << "\n";
 
         uint64_t sent_ns = 0;
         bool should_flush = false;
