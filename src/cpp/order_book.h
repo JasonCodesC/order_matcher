@@ -112,7 +112,6 @@ class VectorOrderBook {
     static constexpr uint32_t kRange = MaxPrice - MinPrice + 1;
     static constexpr uint32_t kWordBits = 64;
     static constexpr uint32_t kNumWords = (kRange + kWordBits - 1) / kWordBits;
-    static constexpr uint32_t kReservePerLevel = (MaxOrderId / kRange) + 1;
 
     struct Level {
         std::vector<Order> orders;
@@ -129,11 +128,7 @@ class VectorOrderBook {
     uint32_t best_price_{0};
 
 public:
-    VectorOrderBook() {
-        for (auto& level : levels_) {
-            level.orders.reserve(kReservePerLevel);
-        }
-    }
+    VectorOrderBook() = default;
 
 private:
     inline bool in_range(uint32_t price) const {
