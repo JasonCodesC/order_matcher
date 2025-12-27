@@ -3,11 +3,11 @@
 
 ## Overview
 
-This project explores a low-latency order matching engine where packets are sent over `UDP` and ingested directly from the network card via 'AF_XDP'. This project also focuses on profiling-driven optimization using 'perf' and timers. The goal was to learn how to build an 'AF_XDP' ingest path, quantify bottlenecks, and iteratively improve throughput and latency.
+This project explores a low-latency order matching engine where packets are sent over UDP and ingested directly from the network card via `AF_XDP`. This project also focuses on profiling-driven optimization using `perf` and timers. The goal was to learn how to build an `AF_XDP` ingest path, quantify bottlenecks, and iteratively improve throughput and latency.
 
 ## System Design
 
-We are sending packets (orders) from a server to the order matching servers via 'UDP'. The structure of a packet follows below.
+We are sending packets (orders) from a server to the order matching servers via UDP. The structure of a packet follows below.
 
 ```
 struct Packet {
@@ -24,7 +24,7 @@ We are assuming the same ticker for this engine as it makes testing and profilin
 
 The sending server has two threads, one sending out orders with somewhat random quantities and price ticks. The other thread receives packets and logs the latencies based on the receiving time and the last order sent. 
 
-We have two types of order matching servers. One is a basic engine that is single threaded and uses 'UDP' sockets. The other uses 'AF_XDP' along with three different threads and two different 'SPSC' (single-producer single-consumer) queues. I tested out two different data structures for efficient matching and tried a few more optimizations like CPU pinning.
+We have two types of order matching servers. One is a basic engine that is single threaded and uses UDP sockets. The other uses `AF_XDP` along with three different threads and two different `SPSC` (single-producer single-consumer) queues. I tested out two different data structures for efficient matching and tried a few more optimizations like CPU pinning.
 
 
 ### Note:
@@ -40,7 +40,7 @@ This project was inspired by Carl Cook and David Gross. Both gave talks on fast 
 │── /data                       # Holds stats and latencies (temporarily)
 │── /plots                      # Plots of latency distributions
 │── /src
-│   ├── /basic_cpp              # Basic Single Threaded Engine with 'UDP'
+│   ├── /basic_cpp              # Basic Single Threaded Engine with UDP
 │   │   └── basic_engine.cpp    
 │   ├── /cpp                    # Advanced Engine
 │   │   ├── book_types.h
@@ -64,15 +64,15 @@ This project was inspired by Carl Cook and David Gross. Both gave talks on fast 
 
 
 ## Architecture
-- 'UDP' sender -> 'AF_XDP' socket -> 'SPSC' ring -> match loop -> 'SPSC' ring -> trade sender.
-- Matching engine: price levels stored in vectors with a bitmap to jump to best price in constant time (cheaper than 'std::hash').
+- UDP sender -> `AF_XDP` socket -> `SPSC` ring -> match loop -> `SPSC` ring -> trade sender.
+- Matching engine: price levels stored in vectors with a bitmap to jump to best price in constant time (cheaper than `std::hash`).
 - Lock-free: this project is lock-free so threads only have to wait for the rings to start filling, each thread reads from a ring and performs its operations independently of anything else.
 - The rings are also aligned on the cache line size (64 bytes)
 
 
-## Notes on 'XDP' Mode and the latencies
+## Notes on `XDP` Mode and the latencies
 
-This runs in 'XDP' copy ('SKB') mode on the VM because the virtual NIC does not support native/zero-copy 'XDP'. The code still uses 'AF_XDP' and the same control flow, but packets are copied by the kernel in this environment (sadly).
+This runs in `XDP` copy (`SKB`) mode on the VM because the virtual NIC does not support native/zero-copy `XDP`. The code still uses `AF_XDP` and the same control flow, but packets are copied by the kernel in this environment (sadly).
 
 Also because this is running on a VM on a Mac the latencies are much higher than FPGA Linux box systems so don't pay too much attention to the microsecond counts as the % change of speedup is really what's important here.
 
@@ -96,7 +96,7 @@ I hardcoded the IPs and Iface so you probably need to change this stuff around o
 
 ## How I went about profiling:
 
-Initially I went into this project assuming I could use 'perf' for everything and all would be well but I was very much wrong. 'Perf stat' doesn't work on the VM so I couldn't find any info on how I was performing on branches or the cache. 'Perf record' was also pretty useless because the vast majority of the time my program was spending in the queues waiting for data so I wasn't even able to figure out which functions were slow. If I had two Linux machines then these would have been pretty easy to use but I have to play with the cards I'm dealt so I decided to keep track of throughput statistics and latency (trade executed time - last order sent in the trade) and improve from there. 
+Initially I went into this project assuming I could use `perf` for everything and all would be well but I was very much wrong. `perf stat` doesn't work on the VM so I couldn't find any info on how I was performing on branches or the cache. `perf record` was also pretty useless because the vast majority of the time my program was spending in the queues waiting for data so I wasn't even able to figure out which functions were slow. If I had two Linux machines then these would have been pretty easy to use but I have to play with the cards I'm dealt so I decided to keep track of throughput statistics and latency (trade executed time - last order sent in the trade) and improve from there. 
 
 ## Results (Throughput Statistics):
 
@@ -153,7 +153,7 @@ The zeros above in between massive trades/sec tell us this engine isn't dealing 
 
 ### V3 stats:
 
-Now that we aren't dealing with the 0s let's try and increase throughput and decrease latency by using another data structure than the pointer based 'std::map'. I chose 'std::vector' here as it has great cache locality and is dynamic so we can grow it as needed. (I did try to reserve a size but experienced a slowdown due to reserving too big of a size, so in the future I may try to find a better resizing method).
+Now that we aren't dealing with the 0s let's try and increase throughput and decrease latency by using another data structure than the pointer based `std::map`. I chose `std::vector` here as it has great cache locality and is dynamic so we can grow it as needed. (I did try to reserve a size but experienced a slowdown due to reserving too big of a size, so in the future I may try to find a better resizing method).
 
 
 | sec  | orders_per_sec | trades_per_sec | total_orders | total_trades |
@@ -180,10 +180,10 @@ Now that we aren't dealing with the 0s let's try and increase throughput and dec
 
 Here I used a bitset to track which price levels are non-empty and jump to the next best level with bit-scan ops rather than full on scans.
 
-- 'ctz' (count trailing zeros): finds the index of the lowest set bit.
-- 'bsr' (bit scan reverse): finds the index of the highest set bit.
+- `ctz` (count trailing zeros): finds the index of the lowest set bit.
+- `bsr` (bit scan reverse): finds the index of the highest set bit.
 
-Also replaced the order_id -> info lookup from 'unordered_map' to a flat array for faster, cache-friendly access without the 'std::hash' overhead.
+Also replaced the order_id -> info lookup from `unordered_map` to a flat array for faster, cache-friendly access without the `std::hash` overhead.
 
 
 | sec  | orders_per_sec | trades_per_sec | total_orders | total_trades |
@@ -208,7 +208,7 @@ Also replaced the order_id -> info lookup from 'unordered_map' to a flat array f
 
 ### V5 stats:
 
-I used thread pinning here. My VM is allocated 5 cores and so I pinned 1-3 on the 'XDP', Matcher, and Output respectively and left core 0 for OS activities and core 4 for the stats I was doing. Note that because I am on a VM this isn't hard pinning like on the physical CPU but it still should help and ended up helping
+I used thread pinning here. My VM is allocated 5 cores and so I pinned 1-3 on the `XDP`, Matcher, and Output respectively and left core 0 for OS activities and core 4 for the stats I was doing. Note that because I am on a VM this isn't hard pinning like on the physical CPU but it still should help and ended up helping
 
 
 | sec  | orders_per_sec | trades_per_sec | total_orders | total_trades |
@@ -260,7 +260,7 @@ Baseline (basic engine):
 
 ## Optimization Summary and Speedup Table
 
-- V1: baseline 'AF_XDP' path with ring buffers and match loop.
+- V1: baseline `AF_XDP` path with ring buffers and match loop.
 - V2: larger rings plus hybrid spin/backoff to reduce idle overhead.
 - V3: vector-based price levels to reduce pointer chasing.
 - V4: bitmap + bit-scan to jump to best price and flat array for order_id lookup.
@@ -281,12 +281,12 @@ Baseline (basic engine):
 
 ## Comprehensive File Overview
 - `Makefile`: build targets for engine and tools.
-- `src/cpp/xdp_kernal.c`: 'XDP' program (redirect to 'AF_XDP' socket).
-- `src/cpp/xdp_recv.cpp`: engine entrypoint, 'AF_XDP' setup, stats, thread pinning.
+- `src/cpp/xdp_kernal.c`: `XDP` program (redirect to `AF_XDP` socket).
+- `src/cpp/xdp_recv.cpp`: engine entrypoint, `AF_XDP` setup, stats, thread pinning.
 - `src/cpp/match.cpp`: matching logic.
 - `src/cpp/order_book.h`: order book data structures and best‑price logic.
 - `src/cpp/book_types.h`: price range and book type aliases.
-- `src/cpp/send_to_engine.cpp`: 'UDP' order generator + latency capture.
+- `src/cpp/send_to_engine.cpp`: UDP order generator + latency capture.
 - `src/cpp/send_from_engine.h`: trade sender thread.
 - `src/cpp/spsc_ring.h`: single‑producer/single‑consumer ring.
 - `src/cpp_helpers/protocols.hpp`: shared wire structs and enums.
@@ -301,6 +301,6 @@ Baseline (basic engine):
 
 ## Final Thoughts:
 
-This was a fun project and I learned a lot. I definitely want to get better at Linux programming and 'perf' but I think this was a great start.
+This was a fun project and I learned a lot. I definitely want to get better at Linux programming and `perf` but I think this was a great start.
 
 Author: Jason Majoros
