@@ -3,7 +3,7 @@
 
 ## Overview
 
-This project explores a low-latency order matching engine where packets are sent over 'UDP' and ingested directly from the network card via 'AF_XDP'. This project also focuses on profiling-driven optimization using 'perf' and timers. The goal was to learn how to build an 'AF_XDP' ingest path, quantify bottlenecks, and iteratively improve throughput and latency.
+This project explores a low-latency order matching engine where packets are sent over `UDP` and ingested directly from the network card via 'AF_XDP'. This project also focuses on profiling-driven optimization using 'perf' and timers. The goal was to learn how to build an 'AF_XDP' ingest path, quantify bottlenecks, and iteratively improve throughput and latency.
 
 ## System Design
 
