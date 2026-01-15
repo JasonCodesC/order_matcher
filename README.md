@@ -301,6 +301,6 @@ Baseline (basic engine):
 
 ## Final Thoughts:
 
-This was a fun project and I learned a lot. I definitely want to get better at Linux programming and `perf` but I think this was a great start.
+This was a fun project and I learned a lot. I definitely want to get better at Linux programming and `perf` but I think this was a great start. 
 
 Author: Jason Majoros
